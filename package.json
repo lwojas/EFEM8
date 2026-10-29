@@ -16,7 +16,7 @@
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "webdsp": "github:lwojas/webdsp"
+    "webdsp": "git+https://github.com/lwojas/webdsp.git#glitch-fx"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

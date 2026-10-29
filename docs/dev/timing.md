@@ -78,7 +78,6 @@ attribute writes and zero React renders. The per-step position is not in the sto
 id)` and pushes the chain to the new level. With WRITE armed, the level at each step's start is recorded into
 the lane chosen for the hold (`pickWriteLane`: the first empty lane, or wipe all three and use the first) as steps
 become audible. `punchUp` returns the chain to the written lanes' layered value, or to rest.
-A released VERB keeps the reverb return open for `VERB_TAIL` (2.5 s).
 
 ## Stopped-transport arpeggiator
 

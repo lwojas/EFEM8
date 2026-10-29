@@ -4,7 +4,7 @@
 import { hasEmbeddedHost } from "webdsp";
 import { Groovebox, type MixInput } from "./audio";
 import type { AudibleStep, HostPlayback } from "./hostplay";
-import { laneLayers, layeredTarget, sweepLevel, VERB_ID, VERB_TAIL, type PunchLayer } from "./mangler";
+import { laneLayers, layeredTarget, sweepLevel, type PunchLayer } from "./mangler";
 import { editPattern, getState, observe, setState } from "./store";
 import { TRACKS } from "./spec";
 import { MAX_CHAIN, pickWriteLane, trackStepAt, type Pattern } from "./state";
@@ -61,8 +61,6 @@ class Controller {
   private writeLanes = new Map<number, number>();
   /** Audio time the held punch went down: the sweep level grows from here. */
   private punchSince = 0;
-  /** Keep the reverb return open until this audio time so a released VERB rings out. */
-  private verbUntil = 0;
 
   // arpeggiators: one per melodic track, all fed by the same transport grid (the step compiler owns them: held keys go
   // in here, sequencer steps go in through it)
@@ -441,12 +439,9 @@ class Controller {
   }
 
   punchUp(): void {
-    const st = getState();
-    const held = st.punch;
     setState({ punch: 0 });
     this.punchScheduled = -1;
     this.writeLanes.clear();
-    if (held === VERB_ID && this.gb) this.verbUntil = this.gb.now + VERB_TAIL;
     this.applyLayers(this.writtenLayersNow());
   }
 
@@ -514,13 +509,13 @@ class Controller {
     gb.applySound(this.soundPattern());
     // While the DAW plays, the written FX are the host's (they ride the sequence): re-applying the page's idea of the punch chain
     // would cut a ramp that is running. Only a punch the player holds is the page's to apply.
-    if (this.host?.playing && getState().punch === 0) gb.applyMix(this.mixInput(false, 0), undefined, "pattern");
+    if (this.host?.playing && getState().punch === 0) gb.applyMix(this.mixInput(false, 0, false), undefined, "pattern");
     else this.applyLayers(this.layersApplied);
   }
 
-  private mixInput(takeover: boolean, boost: number): MixInput {
+  private mixInput(takeover: boolean, boost: number, glitch: boolean): MixInput {
     const st = getState();
-    return { pattern: this.soundPattern(), mutes: st.mutes, solos: st.solos, takeover, boost };
+    return { pattern: this.soundPattern(), mutes: st.mutes, solos: st.solos, takeover, boost, glitch };
   }
 
   /** Put the punch bus in the state for these punches (none = resting). */
@@ -529,10 +524,9 @@ class Controller {
     if (!gb) return;
     gb.when(time, () => {
       this.layersApplied = layers;
-      const keepVerb = layers.length === 0 && gb.now < this.verbUntil;
-      const target = layeredTarget(this.soundPattern().mangler, layers, keepVerb);
+      const target = layeredTarget(this.soundPattern().mangler, layers);
       gb.applyManglerValues(target.values);
-      gb.applyMix(this.mixInput(target.takeover, target.boost));
+      gb.applyMix(this.mixInput(target.takeover, target.boost, target.glitch));
     });
   }
 
@@ -550,7 +544,7 @@ class Controller {
     gb.scheduleManglerSegment(a.values, b.values, t, hasRamp ? stepDur : 0);
     gb.when(t, () => {
       this.layersApplied = layers;
-      gb.applyMix(this.mixInput(a.takeover, a.boost));
+      gb.applyMix(this.mixInput(a.takeover, a.boost, a.glitch));
     });
   }
 
@@ -585,9 +579,6 @@ class Controller {
       const lvl = this.heldLevel(now);
       const [on] = this.layersApplied;
       if (this.layersApplied.length !== 1 || on.lvl !== lvl || on.id !== st.punch) this.applyLayers(heldLayers(st.punch, lvl));
-    } else if (this.verbUntil && now >= this.verbUntil) {
-      this.verbUntil = 0;
-      if (this.layersApplied.length === 0) this.applyLayers([]);
     }
   }
 

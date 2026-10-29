@@ -3,13 +3,16 @@
 // Topology (all webdsp primitives, nothing custom). A bus has one main route and one send, so each
 // track is a short chain of buses, each adding one tap:
 //
-//   instrument ─▶ A (fader/mute) ─main─▶ B ─main─▶ C ─main─▶ master ─▶ limiter
-//                    └─send─▶ DELAY_t     └─send─▶ REVERB_t   └─send─▶ PUNCH bus ─▶ master
+//   instrument ─▶ A (fader/mute) ─main─▶ B ─main─▶ D ─main─▶ C ─main─▶ master ─▶ limiter
+//                    └─send─▶ DELAY_t     └─send─▶ REVERB_t  └─send─▶ GLITCH  └─send─▶ PUNCH bus ─▶ master
 //
 //   DELAY_t  (per track, wet-only): Dub Delay (Beat) ▶ Delay (Free), one of them active
 //   REVERB_t (per track, wet-only): Reverb. Idle while its send is 0 (webdsp sleeps unfed buses).
-//   PUNCH bus chain: Filter ▶ Saturation ▶ Bitcrusher ▶ Phaser ▶ Flanger ▶ Dub Delay ▶ Reverb
+//   PUNCH bus chain: Filter ▶ Saturation ▶ Bitcrusher ▶ Phaser ▶ Flanger ▶ Dub Delay
 //   The punch bus is only fed while a punch is held (C's send); C's main is cut during a takeover.
+//   GLITCH bus: one Glitch effect, fed by every punched track's D send *all the time* (so its ring buffer always holds what just played
+//   and a repeat can capture it), silent (bus gain 0) until a glitch punch is held. Then D's main is cut (a takeover at D) and the
+//   glitch bus plays into the punch bus, so a glitch can be layered with the other punches.
 import {
   AudioRuntime,
   EffectKind,
@@ -23,7 +26,7 @@ import {
   type ScheduledParam,
 } from "webdsp";
 import { defaultWorkletUrl } from "webdsp/worklet-url";
-import { baseValues, MANGLER_KEYS, MANGLER_PARAMS, type FxSlot, type ManglerValues } from "./mangler";
+import { baseValues, MANGLER_KEYS, MANGLER_PARAMS, SLOT_ON_GLITCH_BUS, type FxSlot, type ManglerValues } from "./mangler";
 import { lockParams, type LockParam } from "./plock";
 import { normToUnits, NUM_TRACKS, TRACKS } from "./spec";
 import { trackStepAt, type Pattern } from "./state";
@@ -58,6 +61,8 @@ export interface MixInput {
   solos: readonly boolean[];
   takeover: boolean;
   boost: number;
+  /** A glitch punch is held (see mangler.ts): the glitch bus plays and the tracks' D main is cut. */
+  glitch?: boolean;
 }
 
 /** The ids of everything the graph is made of: what the pure functions below address. */
@@ -66,6 +71,9 @@ export interface GraphIds {
   trackBus: readonly BusId[];
   busB: readonly BusId[];
   busC: readonly BusId[];
+  /** Per track: the glitch tap, between B and C. */
+  busD: readonly BusId[];
+  glitchBus: BusId;
   delayBus: readonly BusId[];
   reverbBus: readonly BusId[];
   delayFx: ReadonlyArray<{ dub: EffectId; free: EffectId }>;
@@ -104,8 +112,12 @@ export function mixWrites(ids: GraphIds, mix: MixInput, group: "pattern" | "punc
       const punched = tp.punch !== false;
       bus(ids.busC[t], `${t}:s`, NodeParam.BusSendAmount, punched ? (mix.takeover ? 1 : mix.boost) : 0);
       bus(ids.busC[t], `${t}:m`, NodeParam.BusMainGain, punched && mix.takeover ? 0 : 1);
+      // the glitch tap always feeds the glitch bus (its buffer must hold what just played); its main is cut while a glitch is held
+      bus(ids.busD[t], `${t}:gs`, NodeParam.BusSendAmount, punched ? 1 : 0);
+      bus(ids.busD[t], `${t}:gm`, NodeParam.BusMainGain, punched && mix.glitch ? 0 : 1);
     }
   }
+  if (group !== "pattern") bus(ids.glitchBus, "glitch:g", NodeParam.BusGain, mix.glitch ? 1 : 0);
   return out;
 }
 
@@ -173,7 +185,7 @@ export function soundWrites(ids: GraphIds, pattern: Pattern): Write[] {
 export function manglerWrites(ids: GraphIds, values: ManglerValues, clamp: (param: number, value: number) => number): Write[] {
   return MANGLER_KEYS.map((key) => {
     const { fx, param } = MANGLER_PARAMS[key];
-    return { kind: "fx", key, bus: ids.manglerBus, effect: ids.fx[fx], param, value: clamp(param, values[key]) };
+    return { kind: "fx", key, bus: SLOT_ON_GLITCH_BUS[fx] ? ids.glitchBus : ids.manglerBus, effect: ids.fx[fx], param, value: clamp(param, values[key]) };
   });
 }
 
@@ -183,6 +195,7 @@ export class Groovebox {
   private readonly trackBus: BusId[] = [];
   private readonly busB: BusId[] = [];
   private readonly busC: BusId[] = [];
+  private readonly busD: BusId[] = [];
   private readonly delayBus: BusId[] = [];
   private readonly reverbBus: BusId[] = [];
   private readonly delayFx: Array<{ dub: EffectId; free: EffectId }> = [];
@@ -190,6 +203,7 @@ export class Groovebox {
   private readonly filterFx: EffectId[] = [];
   private readonly inst: InstrumentId[] = [];
   private readonly manglerBus: BusId;
+  private readonly glitchBus: BusId;
   private readonly fx = {} as Record<FxSlot, EffectId>;
   private readonly effectRange = new Map<number, { min: number; max: number }>();
   /** Last value of each mangler key as it will be once the scheduled segments have run. */
@@ -209,6 +223,12 @@ export class Groovebox {
 
   private constructor(readonly runtime: AudioRuntime) {
     this.manglerBus = runtime.createBus();
+    // the glitch bus plays into the punch bus, and is silent until a glitch punch is held
+    this.glitchBus = runtime.createBus();
+    runtime.setNodeParameter(this.glitchBus, NodeParam.BusOutput, this.manglerBus);
+    runtime.setNodeParameter(this.glitchBus, NodeParam.BusGain, 0);
+    this.fx.glitch = runtime.addEffect(this.glitchBus, EffectKind.Glitch);
+    for (const p of runtime.getEffectParams(EffectKind.Glitch)) this.effectRange.set(p.id, { min: p.min, max: p.max });
     for (const [slot, kind] of [
       ["filter", EffectKind.Filter],
       ["sat", EffectKind.Saturation],
@@ -216,7 +236,6 @@ export class Groovebox {
       ["phaser", EffectKind.Phaser],
       ["flange", EffectKind.ChorusFlanger],
       ["dub", EffectKind.DubDelay],
-      ["verb", EffectKind.Reverb],
     ] as const) {
       this.fx[slot] = runtime.addEffect(this.manglerBus, kind);
       for (const p of runtime.getEffectParams(kind)) this.effectRange.set(p.id, { min: p.min, max: p.max });
@@ -231,15 +250,20 @@ export class Groovebox {
       const bus = runtime.createBus();
       const b = runtime.createBus();
       const c = runtime.createBus();
+      const d = runtime.createBus();
       const dly = runtime.createBus();
       const rev = runtime.createBus();
       this.trackBus.push(bus);
       this.busB.push(b);
       this.busC.push(c);
+      this.busD.push(d);
       this.delayBus.push(dly);
       this.reverbBus.push(rev);
       runtime.setNodeParameter(bus, NodeParam.BusOutput, b);
-      runtime.setNodeParameter(b, NodeParam.BusOutput, c);
+      runtime.setNodeParameter(b, NodeParam.BusOutput, d);
+      runtime.setNodeParameter(d, NodeParam.BusOutput, c);
+      runtime.setNodeParameter(d, NodeParam.BusSendTarget, this.glitchBus);
+      runtime.setNodeParameter(d, NodeParam.BusSendAmount, 1); // always feeding the glitch buffer (a track that opts out of punch FX has it set to 0)
       runtime.setNodeParameter(bus, NodeParam.BusSendTarget, dly);
       runtime.setNodeParameter(bus, NodeParam.BusSendAmount, 0);
       runtime.setNodeParameter(b, NodeParam.BusSendTarget, rev);
@@ -261,7 +285,7 @@ export class Groovebox {
       this.inst.push(this.createVoice(spec, bus));
     }
     this.ids = {
-      trackBus: this.trackBus, busB: this.busB, busC: this.busC, delayBus: this.delayBus, reverbBus: this.reverbBus,
+      trackBus: this.trackBus, busB: this.busB, busC: this.busC, busD: this.busD, glitchBus: this.glitchBus, delayBus: this.delayBus, reverbBus: this.reverbBus,
       delayFx: this.delayFx, reverbFx: this.reverbFx, filterFx: this.filterFx, inst: this.inst, manglerBus: this.manglerBus, fx: this.fx,
     };
     this.applyManglerValues(baseValues());
@@ -444,7 +468,7 @@ export class Groovebox {
       const { fx, param } = MANGLER_PARAMS[key];
       const range = this.effectRange.get(param);
       const v = range ? Math.min(range.max, Math.max(range.min, values[key])) : values[key];
-      this.runtime.setEffectParameter(this.manglerBus, this.fx[fx], param, v);
+      this.runtime.setEffectParameter(SLOT_ON_GLITCH_BUS[fx] ? this.glitchBus : this.manglerBus, this.fx[fx], param, v);
     }
   }
 
@@ -457,7 +481,7 @@ export class Groovebox {
       const { fx, param } = MANGLER_PARAMS[key];
       const range = this.effectRange.get(param);
       const clamp = (v: number) => (range ? Math.min(range.max, Math.max(range.min, v)) : v);
-      const target = { effect: { bus: this.manglerBus, effect: this.fx[fx] } };
+      const target = { effect: { bus: SLOT_ON_GLITCH_BUS[fx] ? this.glitchBus : this.manglerBus, effect: this.fx[fx] } };
       const ramp = dur > 0 && from[key] !== to[key];
       if (!ramp && this.scheduled[key] === from[key]) continue;
       events.push(

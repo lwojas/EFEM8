@@ -2,7 +2,7 @@
 
 **An FM groovebox for the browser.** Eight track slots, and each plays one of eight curated FM engines: kick, snare,
 hat, tom, bass, pluck, bell and lead. Choose the instrument for a slot, turn five knobs, sequence it. Nine performance
-effects you play by hand and record, and 64 patterns that chain into songs. It opens in one tap, runs on a phone as well
+effects (six processors and three glitches: repeat, tape stop, gate) you play by hand and record, and 64 patterns that chain into songs. It opens in one tap, runs on a phone as well
 as a desktop, and keeps everything you make.
 
 FM.8 is the second instrument in a family of compact grooveboxes that share one shell (see

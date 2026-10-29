@@ -371,10 +371,11 @@ function laneEvents(song: Song, entries: Entry[], ctx: NativeCtx, events: Sequen
       events.push(cur.ramps && w.value !== wb[i].value ? writeEvent(wb[i], beat, { from: w.value, beats: STEP_BEATS }) : writeEvent(w, beat));
     });
 
-    // the punch section's sends: takeover cuts each punched track's dry signal and feeds it all to the chain, else the sends lift
-    const mix = (t: { takeover: boolean; boost: number }) => mixWrites(ctx.ids, { pattern: pat, mutes: [], solos: [], takeover: t.takeover, boost: t.boost }, "punch");
+    // the punch section's sends: takeover cuts each punched track's dry signal and feeds it all to the chain, else the sends lift;
+    // a glitch cuts it at the glitch tap instead and opens the glitch bus
+    const mix = (t: { takeover: boolean; boost: number; glitch: boolean }) => mixWrites(ctx.ids, { pattern: pat, mutes: [], solos: [], takeover: t.takeover, boost: t.boost, glitch: t.glitch }, "punch");
     const sends = mix(cur.a);
-    const was = new Map(mixWrites(ctx.ids, { pattern: song.patterns[prev.e.pattern], mutes: [], solos: [], takeover: before.a.takeover, boost: before.a.boost }, "punch").map((w) => [w.key, w.value]));
+    const was = new Map(mixWrites(ctx.ids, { pattern: song.patterns[prev.e.pattern], mutes: [], solos: [], takeover: before.a.takeover, boost: before.a.boost, glitch: before.a.glitch }, "punch").map((w) => [w.key, w.value]));
     for (const w of sends) {
       if (w.value !== restMix.get(w.key) || was.get(w.key) !== restMix.get(w.key)) events.push(writeEvent(w, beat));
     }

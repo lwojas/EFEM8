@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARP_RATES, Arpeggiator, arpIndex, arpPool, normalizeArp, type ArpDirection, type ArpSettings } from "../src/engine/arp";
+import { GlitchMode } from "webdsp";
 import { baseValues, layeredTarget, manglerTarget, PUNCHES, sweepLevel } from "../src/engine/mangler";
 import { BEAT_DIVISIONS, freeDelaySeconds } from "../src/engine/trackfx";
 import { DEFAULT_ENGINES, ENGINES } from "../src/engines";
@@ -45,27 +46,29 @@ describe("control mapping", () => {
 
 describe("punch FX", () => {
   const base = newPattern().mangler;
-  it("rests transparent with the dub return open and the reverb out of the path", () => {
+  const id = (label: string) => PUNCHES.find((p) => p.label === label)!.id;
+  const withParam = (label: string, v: number) => ({ ...base, param: base.param.map((x, i) => (i === id(label) ? v : x)) });
+  it("rests transparent with the dub return open and the glitch idle", () => {
     const v = baseValues();
     expect(v.sMix).toBe(0);
     expect(v.cMix).toBe(0);
     expect(v.pMix).toBe(0);
     expect(v.xMix).toBe(0);
-    expect(v.rMix).toBe(0);
+    expect(v.gMix).toBe(0);
     expect(v.dMix).toBe(1);
   });
-  it("takeover punches cut the dry path and bypass the wet-only returns", () => {
+  it("takeover punches cut the dry path and bypass the wet-only return", () => {
     for (const p of PUNCHES.filter((x) => x.takeover)) {
       const t = manglerTarget(base, p.id);
       expect(t.takeover).toBe(true);
+      expect(t.glitch).toBe(false);
       expect(t.values.dMix).toBe(0);
-      expect(t.values.rMix).toBe(0);
     }
-    expect(manglerTarget(base, 5).takeover).toBe(false);
+    expect(manglerTarget(base, id("DUB")).takeover).toBe(false);
     expect(manglerTarget(base, 0).takeover).toBe(false);
   });
-  it("offers the new catalogue with one parameter each", () => {
-    expect(PUNCHES.map((p) => p.label)).toEqual(["FILTER", "DRIVE", "CRUSH", "PHASE", "DUB", "ROLL", "SWEEP", "FLANGE", "VERB"]);
+  it("offers the catalogue with one parameter each: six effects and three glitches, no filter, roll or verb", () => {
+    expect(PUNCHES.map((p) => p.label)).toEqual(["DRIVE", "CRUSH", "PHASE", "DUB", "SWEEP", "FLANGE", "REPEAT", "TAPE", "GATE"]);
     expect(new Set(PUNCHES.map((p) => p.id)).size).toBe(PUNCHES.length);
     expect(base.param).toHaveLength(PUNCHES.length + 1);
   });
@@ -85,16 +88,61 @@ describe("punch FX", () => {
       }
       expect(full).not.toEqual(zero);
     }
-    expect(manglerTarget(base, 5, 0).boost).toBe(0);
-    expect(manglerTarget(base, 5, 1).boost).toBeGreaterThan(0.8);
-    expect(manglerTarget(base, 9, 1).values.rMix).toBe(1);
+    expect(manglerTarget(base, id("DUB"), 0).boost).toBe(0);
+    expect(manglerTarget(base, id("DUB"), 1).boost).toBeGreaterThan(0.8);
   });
   it("filter sweep goes open to closed, or closed to open, by shape", () => {
-    const close = { ...base, param: base.param.map((v, i) => (i === 7 ? 0 : v)) };
-    const open = { ...base, param: base.param.map((v, i) => (i === 7 ? 2 / 3 : v)) };
-    expect(manglerTarget(close, 7, 0).values.fCut).toBeGreaterThan(manglerTarget(close, 7, 1).values.fCut);
-    expect(manglerTarget(open, 7, 0).values.fCut).toBeLessThan(manglerTarget(open, 7, 1).values.fCut);
-    expect(manglerTarget(open, 7, 1).values.fCut).toBeCloseTo(20000, 0);
+    const S = id("SWEEP");
+    const close = withParam("SWEEP", 0);
+    const open = withParam("SWEEP", 2 / 3);
+    expect(manglerTarget(close, S, 0).values.fCut).toBeGreaterThan(manglerTarget(close, S, 1).values.fCut);
+    expect(manglerTarget(open, S, 0).values.fCut).toBeLessThan(manglerTarget(open, S, 1).values.fCut);
+    expect(manglerTarget(open, S, 1).values.fCut).toBeCloseTo(20000, 0);
+  });
+  describe("glitches", () => {
+    it("are not takeovers and send nothing into the punch bus: they come from the glitch bus", () => {
+      for (const label of ["REPEAT", "TAPE", "GATE"]) {
+        const t = manglerTarget(base, id(label), 1);
+        expect(t.glitch).toBe(true);
+        expect(t.takeover).toBe(false);
+        expect(t.boost).toBe(0);
+        expect(t.values.dMix).toBe(0);
+      }
+      expect(manglerTarget(base, 0).glitch).toBe(false);
+    });
+    it("REPEAT engages at once, in repeat mode, and rolls: the loop steps down to the chosen length as the sweep rises", () => {
+      const R = id("REPEAT");
+      const p = withParam("REPEAT", 1); // 1/32
+      const at = (l: number) => manglerTarget(p, R, l).values;
+      expect(at(0)).toMatchObject({ gMix: 1, gMode: GlitchMode.Repeat, gSpeed: 1 });
+      const divs = [0, 0.25, 0.5, 0.75, 1].map((l) => at(l).gDiv);
+      expect(divs[0]).toBe(2); // starts two divisions longer (1/8)
+      expect(divs[4]).toBe(4); // ends on 1/32
+      expect([...divs].sort((a, b) => a - b)).toEqual(divs); // only ever gets shorter
+      // a slow chosen length does not roll
+      expect(new Set([0, 0.5, 1].map((l) => manglerTarget(withParam("REPEAT", 0), R, l).values.gDiv))).toEqual(new Set([1]));
+    });
+    it("TAPE slows from untouched to the shape's speed as the level rises", () => {
+      const T = id("TAPE");
+      for (const [shape, to] of [[0, 0], [0.5, 0.5], [1, -1]] as const) {
+        const p = withParam("TAPE", shape);
+        expect(manglerTarget(p, T, 0).values).toMatchObject({ gMix: 1, gMode: GlitchMode.Tape, gSpeed: 1 });
+        expect(manglerTarget(p, T, 1).values.gSpeed).toBe(to);
+      }
+    });
+    it("GATE's depth is the sweep level and its length the chosen division", () => {
+      const G = id("GATE");
+      expect(manglerTarget(base, G, 0).values.gMix).toBe(0);
+      expect(manglerTarget(base, G, 1).values).toMatchObject({ gMix: 1, gMode: GlitchMode.Gate, gDiv: 3 }); // default 1/16
+      expect(manglerTarget(withParam("GATE", 0), G, 1).values.gDiv).toBe(1);
+    });
+    it("layer with the other punches: the glitch is a layer, the chain punch still takes over", () => {
+      const both = layeredTarget(base, [{ id: id("REPEAT"), lvl: 1 }, { id: id("DRIVE"), lvl: 1 }]);
+      expect(both.glitch).toBe(true);
+      expect(both.takeover).toBe(true);
+      expect(both.values.gMix).toBe(1);
+      expect(both.values.sMix).toBe(1);
+    });
   });
   it("sweep level rises with held time at the project tempo and holds at full", () => {
     const m = { ...base, sweep: 2 }; // 8 steps = 2 beats
@@ -123,11 +171,11 @@ describe("punch FX", () => {
   });
   it("layered punches stack their overrides; one layer equals the single punch", () => {
     const rest = baseValues();
-    const filter = manglerTarget(base, 1, 1);
-    expect(layeredTarget(base, [{ id: 1, lvl: 1 }])).toEqual(filter);
+    const drive = manglerTarget(base, 1, 1);
+    expect(layeredTarget(base, [{ id: 1, lvl: 1 }])).toEqual(drive);
     expect(layeredTarget(base, [])).toEqual(manglerTarget(base, 0, 0));
-    const both = layeredTarget(base, [{ id: 1, lvl: 1 }, { id: 3, lvl: 1 }]);
-    expect(both.values.fCut).toBe(filter.values.fCut);
+    const both = layeredTarget(base, [{ id: 1, lvl: 1 }, { id: 2, lvl: 1 }]);
+    expect(both.values.sMix).toBe(drive.values.sMix);
     expect(both.values.cMix).toBe(1);
     expect(both.values.cBits).not.toBe(rest.cBits);
     expect(both.takeover).toBe(true);

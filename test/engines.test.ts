@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setArp, setEngine, setLockable, setPlockMode, setSound, tapStep, toggleStepFlag, setStepGate } from "../src/engine/actions";
-import { Groovebox } from "../src/engine/audio";
+import { Groovebox, mixWrites, type GraphIds, type Write } from "../src/engine/audio";
 import { DEFAULT_ENGINES, ENGINES } from "../src/engines";
 import { fromHostSnapshot, toHostSnapshot } from "../src/engine/persist";
 import { getParam, paramManifest } from "../src/engine/params";
@@ -248,5 +248,47 @@ describe("the audio layer swaps the instrument", () => {
     expect((gb as any).soundCache[3].every((v: number) => v === 0.5)).toBe(true);
     expect((gb as any).lockedKeys.size).toBe(0);
     expect((gb as any).lockedParams[4].size).toBe(0);
+  });
+});
+
+describe("glitch routing (mixWrites)", () => {
+  const ids = {
+    trackBus: [1, 2, 3, 4, 5, 6, 7, 8], busB: [11, 12, 13, 14, 15, 16, 17, 18], busC: [21, 22, 23, 24, 25, 26, 27, 28], busD: [31, 32, 33, 34, 35, 36, 37, 38], glitchBus: 99,
+  } as unknown as GraphIds;
+  const mix = (over: object) => ({ pattern: getState().patterns[0], mutes: [], solos: [], takeover: false, boost: 0, ...over });
+  const value = (w: Write[], key: string) => w.find((x) => x.key === key)!.value;
+
+  it("always feeds the glitch tap and never cuts it at rest", () => {
+    const w = mixWrites(ids, mix({}), "punch");
+    for (let t = 0; t < 8; t++) {
+      expect(value(w, `${t}:gs`)).toBe(1);
+      expect(value(w, `${t}:gm`)).toBe(1);
+    }
+    expect(value(w, "glitch:g")).toBe(0);
+  });
+
+  it("a held glitch cuts the tracks at the tap and opens the glitch bus, leaving the punch bus's takeover alone", () => {
+    const w = mixWrites(ids, mix({ glitch: true }), "punch");
+    for (let t = 0; t < 8; t++) {
+      expect(value(w, `${t}:gm`)).toBe(0);
+      expect(value(w, `${t}:gs`)).toBe(1);
+      expect(value(w, `${t}:m`)).toBe(1); // bus C's main: only a takeover cuts it
+      expect(value(w, `${t}:s`)).toBe(0);
+    }
+    expect(value(w, "glitch:g")).toBe(1);
+  });
+
+  it("a track that opts out of punch FX is neither fed to the glitch bus nor cut", () => {
+    const pattern = structuredClone(getState().patterns[0]);
+    pattern.tracks[2].punch = false;
+    const w = mixWrites(ids, mix({ pattern, glitch: true }), "punch");
+    expect(value(w, "2:gs")).toBe(0);
+    expect(value(w, "2:gm")).toBe(1);
+    expect(value(w, "1:gm")).toBe(0);
+  });
+
+  it("the pattern group writes none of it", () => {
+    const w = mixWrites(ids, mix({ glitch: true }), "pattern");
+    expect(w.some((x) => x.key.endsWith(":gs") || x.key.endsWith(":gm") || x.key === "glitch:g")).toBe(false);
   });
 });
