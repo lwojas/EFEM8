@@ -28,6 +28,8 @@ import { lockParams, type LockParam } from "./plock";
 import { normToUnits, NUM_TRACKS, TRACKS } from "./spec";
 import { trackStepAt, type Pattern } from "./state";
 import {
+  filterHz,
+  filterQ,
   BEAT_DIVISIONS, DELAY_FEEDBACK_BEAT, DELAY_FEEDBACK_FREE, DELAY_TONE, freeDelaySeconds, reverbDamping, reverbDecay,
 } from "./trackfx";
 
@@ -68,6 +70,8 @@ export interface GraphIds {
   reverbBus: readonly BusId[];
   delayFx: ReadonlyArray<{ dub: EffectId; free: EffectId }>;
   reverbFx: readonly EffectId[];
+  /** Per track: the resonant filter on bus A, ahead of the fader and both sends. */
+  filterFx: readonly EffectId[];
   inst: readonly InstrumentId[];
   manglerBus: BusId;
   fx: Readonly<Record<FxSlot, EffectId>>;
@@ -126,6 +130,10 @@ export function trackFxWrites(ids: GraphIds, pattern: Pattern, clamp: (param: nu
       fx(bus, free, "freeTime", NodeParam.DelayTime, freeDelaySeconds(dly.time));
       fx(bus, free, "freeFb", NodeParam.DelayFeedback, DELAY_FEEDBACK_FREE);
     }
+    const { filter } = pattern.tracks[t];
+    fx(ids.trackBus[t], ids.filterFx[t], "fMode", NodeParam.FilterMode, filter.mode);
+    fx(ids.trackBus[t], ids.filterFx[t], "fCut", NodeParam.FilterCutoff, filterHz(filter.cut));
+    fx(ids.trackBus[t], ids.filterFx[t], "fRes", NodeParam.FilterResonance, filterQ(filter.res));
     fx(ids.reverbBus[t], ids.reverbFx[t], "decay", NodeParam.ReverbDecay, reverbDecay(rev.size));
     fx(ids.reverbBus[t], ids.reverbFx[t], "damp", NodeParam.ReverbDamping, reverbDamping(rev.size));
   }
@@ -139,6 +147,13 @@ export function lockWrite(ids: GraphIds, track: number, p: LockParam, value: num
   if (t.kind === "sound") {
     const c = TRACKS[track].controls[t.control];
     return { kind: "inst", key: `${track}:${t.control}`, instrument: ids.inst[track], param: c.param, value: normToUnits(c, value) };
+  }
+  if (t.kind === "filter") {
+    const cut = t.param === "cut";
+    return {
+      kind: "fx", key: `${track}:${cut ? "fCut" : "fRes"}`, bus: ids.trackBus[track], effect: ids.filterFx[track],
+      param: cut ? NodeParam.FilterCutoff : NodeParam.FilterResonance, value: cut ? filterHz(value) : filterQ(value),
+    };
   }
   const delay = t.send === "dly";
   return { kind: "bus", key: `${track}:${delay ? "d" : "r"}`, bus: delay ? ids.trackBus[track] : ids.busB[track], param: NodeParam.BusSendAmount, value };
@@ -172,6 +187,7 @@ export class Groovebox {
   private readonly reverbBus: BusId[] = [];
   private readonly delayFx: Array<{ dub: EffectId; free: EffectId }> = [];
   private readonly reverbFx: EffectId[] = [];
+  private readonly filterFx: EffectId[] = [];
   private readonly inst: InstrumentId[] = [];
   private readonly manglerBus: BusId;
   private readonly fx = {} as Record<FxSlot, EffectId>;
@@ -240,11 +256,13 @@ export class Groovebox {
       const verb = runtime.addEffect(rev, EffectKind.Reverb);
       runtime.setEffectParameter(rev, verb, NodeParam.ReverbMix, 1);
       this.reverbFx.push(verb);
+      // the track filter sits on bus A: ahead of the fader and the delay send, so what the sends carry is filtered
+      this.filterFx.push(runtime.addEffect(bus, EffectKind.Filter));
       this.inst.push(this.createVoice(spec, bus));
     }
     this.ids = {
       trackBus: this.trackBus, busB: this.busB, busC: this.busC, delayBus: this.delayBus, reverbBus: this.reverbBus,
-      delayFx: this.delayFx, reverbFx: this.reverbFx, inst: this.inst, manglerBus: this.manglerBus, fx: this.fx,
+      delayFx: this.delayFx, reverbFx: this.reverbFx, filterFx: this.filterFx, inst: this.inst, manglerBus: this.manglerBus, fx: this.fx,
     };
     this.applyManglerValues(baseValues());
   }
@@ -324,6 +342,8 @@ export class Groovebox {
       this.soundCache[spec.id].fill(NaN);
       this.busCache.delete(`${spec.id}:d`);
       this.busCache.delete(`${spec.id}:r`);
+      this.fxCache.delete(`${spec.id}:fCut`);
+      this.fxCache.delete(`${spec.id}:fRes`);
     }
   }
 
@@ -374,6 +394,11 @@ export class Groovebox {
           this.soundCache[t][(p.target as { control: number }).control] = locked !== undefined ? NaN : w.value;
         } else if (w.kind === "bus") {
           this.when(time, () => this.setBus(w.bus, w.key, w.param, w.value));
+        } else if (w.kind === "fx") {
+          events.push({ time, target: { effect: { bus: w.bus, effect: w.effect } }, param: w.param, value: w.value });
+          // as for a sound control: while locked the engine's value is not the base, so the next base write must send
+          if (locked !== undefined) this.fxCache.delete(w.key);
+          else this.fxCache.set(w.key, w.value);
         }
       }
       for (const key of before.values()) this.lockedKeys.delete(key);
@@ -389,7 +414,7 @@ export class Groovebox {
   applyMix(mix: MixInput, time?: number, group: "pattern" | "punch" | "all" = "all"): void {
     this.when(time, () => {
       for (const w of mixWrites(this.ids, mix, group)) if (w.kind === "bus" && !this.lockedKeys.has(w.key)) this.setBus(w.bus, w.key, w.param, w.value);
-      for (const w of trackFxWrites(this.ids, mix.pattern, this.clampFx)) if (w.kind === "fx") this.setFx(w.bus, w.effect, w.key, w.param, w.value);
+      for (const w of trackFxWrites(this.ids, mix.pattern, this.clampFx)) if (w.kind === "fx" && !this.lockedKeys.has(w.key)) this.setFx(w.bus, w.effect, w.key, w.param, w.value);
     });
   }
 

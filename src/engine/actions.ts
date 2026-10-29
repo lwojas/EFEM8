@@ -7,7 +7,7 @@ import { ENGINES } from "../engines";
 import { defaultArp } from "./arp";
 import { setLineup, TRACKS } from "./spec";
 import { applyEngine, clearTrackSteps, GATES, newPattern, PAGE, randomizeTrack, withPattern } from "./state";
-import { BEAT_DIVISIONS, type DelaySend, type ReverbSend } from "./trackfx";
+import { BEAT_DIVISIONS, filterOpen, type DelaySend, type ReverbSend, type TrackFilter } from "./trackfx";
 import { editPattern, getState, setState } from "./store";
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
@@ -111,6 +111,7 @@ export function setLockable(track: number, id: string, value: number): void {
     return;
   }
   if (p.target.kind === "sound") setSound(track, p.target.control, value);
+  else if (p.target.kind === "filter") setFilter(track, { [p.target.param]: value });
   else if (p.target.send === "dly") setDelay(track, { send: value });
   else setReverb(track, { send: value });
 }
@@ -151,6 +152,19 @@ export function setReverb(track: number, patch: Partial<ReverbSend>): void {
     Object.assign(r, patch);
     r.send = clamp01(r.send);
     r.size = clamp01(r.size);
+  });
+}
+
+/** Edit a track's filter. Changing the mode puts the cutoff at the new mode's open end, so switching never leaves the track closed. */
+export function setFilter(track: number, patch: Partial<TrackFilter>): void {
+  editPattern((p) => {
+    const f = p.tracks[track].filter;
+    if (patch.mode !== undefined && patch.mode !== f.mode) {
+      f.mode = patch.mode === 1 ? 1 : 0;
+      f.cut = filterOpen(f.mode);
+    }
+    if (patch.cut !== undefined) f.cut = clamp01(patch.cut);
+    if (patch.res !== undefined) f.res = clamp01(patch.res);
   });
 }
 

@@ -59,7 +59,7 @@ function valid(p: unknown): p is Pattern {
     !!x && Array.isArray(x.tracks) && x.tracks.length === NUM_TRACKS && Array.isArray(x.fxLanes) && x.fxLanes.length === FX_LANES &&
     x.fxLanes.every((l) => Array.isArray(l?.fx) && l.fx.length === MAX_STEPS && Array.isArray(l.fxLvl) && l.fxLvl.length === MAX_STEPS) &&
     typeof x.length === "number" && !!x.mangler &&
-    x.tracks.every((t) => Array.isArray(t.steps) && t.steps.length === MAX_STEPS && t.sound?.length === KNOBS && !!t.dly && !!t.rev && typeof t.punch === "boolean")
+    x.tracks.every((t) => Array.isArray(t.steps) && t.steps.length === MAX_STEPS && t.sound?.length === KNOBS && !!t.filter && (t.filter.mode === 0 || t.filter.mode === 1) && Number.isFinite(t.filter.cut) && Number.isFinite(t.filter.res) && !!t.dly && !!t.rev && typeof t.punch === "boolean")
   );
 }
 

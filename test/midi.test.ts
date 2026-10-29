@@ -101,11 +101,11 @@ describe("input", () => {
     control.handle([0xb0, 20, 63]);
     expect(getState().mutes[0]).toBe(false);
   });
-  it("sets a sound knob by position: CC 70 is knob 1 and CC 74 knob 5 of the track's channel, whatever engine it holds", () => {
+  it("sets a sound knob by position: CC 70 is knob 1 and CC 76 knob 5 of the track's channel, whatever engine it holds", () => {
     const { control } = rig();
     control.handle([0xb4, 70, 127]); // channel 5 = BASS, first knob is COLOR (8 steps, normalised)
     expect(getParam("track.5.sound.k1", getState())).toBe(1);
-    control.handle([0xb6, 74, 0]); // channel 7 = BELL, CC74 = knob 5
+    control.handle([0xb6, 76, 0]); // channel 7 = BELL, CC76 = knob 5
     expect(getState().patterns[0].tracks[6].sound[4]).toBe(0);
   });
   it("uses the default channel for a parameter without one, and an override otherwise", () => {

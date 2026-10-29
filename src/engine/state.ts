@@ -7,7 +7,7 @@ import { setLock, clearSoundLocks } from "./plock";
 import { defaultArp, type ArpSettings } from "./arp";
 import { defaultMangler } from "./mangler";
 import { defaultScale, isChromatic, notesInRange, rootAtOrAbove, type ProjectScale } from "./scale";
-import { newDelay, newReverb, type DelaySend, type ReverbSend } from "./trackfx";
+import { newDelay, newFilter, newReverb, type DelaySend, type ReverbSend, type TrackFilter } from "./trackfx";
 
 export const MAX_STEPS = 64;
 export const PAGE = 16;
@@ -55,6 +55,8 @@ export interface TrackPattern {
   /** Track sends (mixing): delay and reverb. */
   dly: DelaySend;
   rev: ReverbSend;
+  /** The track's resonant filter (mixing; lockable cutoff and resonance). */
+  filter: TrackFilter;
   /** Punch FX send gate: false keeps the track out of the punch section (neither fed nor taken over). */
   punch: boolean;
   /** Octave shift for melodic tracks. */
@@ -189,6 +191,7 @@ export function newTrackPattern(track: number): TrackPattern {
     level: defaultLevel(track),
     dly: newDelay(track),
     rev: newReverb(track),
+    filter: newFilter(),
     punch: true,
     oct: 0,
   };
@@ -328,6 +331,7 @@ export function applyEngine(p: Pattern, track: number, from: TrackSpec["role"]) 
   tp.level = spec.mix.level;
   tp.dly = newDelay(track);
   tp.rev = newReverb(track);
+  tp.filter = newFilter();
   tp.oct = 0;
   const lo = spec.noteLo ?? 0;
   const hi = spec.noteHi ?? 127;

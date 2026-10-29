@@ -1,7 +1,7 @@
 // Sound, mixer, FX mangler and pattern panels.
 import { useRef, useState, type CSSProperties } from "react";
 import {
-  clearChain, clearPattern, clearStepLocks, removeChainEntry, setDelay, setEngine, setLevel, setLockable, setPlockMode, setPunchParam,
+  clearChain, clearPattern, clearStepLocks, removeChainEntry, setDelay, setEngine, setFilter, setLevel, setLockable, setPlockMode, setPunchParam,
   setPunchSend, setReverb, setSoundControl, setSweep, toggleMute, toggleSolo,
 } from "../engine/actions";
 import { controller } from "../engine/controller";
@@ -10,7 +10,7 @@ import { hasLocks, lockStep, soundParam } from "../engine/plock";
 import { ENGINES } from "../engines";
 import { defaultSound, formatControl, TRACKS, unitsToNorm } from "../engine/spec";
 import { BANK_SIZE, defaultLevel, MAX_CHAIN, NUM_PATTERNS } from "../engine/state";
-import { BEAT_DIVISIONS, defaultDelaySend, defaultReverbSend, DELAY_MODES, formatFreeDelay } from "../engine/trackfx";
+import { BEAT_DIVISIONS, defaultDelaySend, defaultReverbSend, DELAY_MODES, filterOpen, FILTER_MODES, formatFilterHz, formatFreeDelay } from "../engine/trackfx";
 import { getState, setState, useLineup, useStore } from "../engine/store";
 import { Knob, Slider } from "./controls";
 import { Modal } from "./Modal";
@@ -48,6 +48,26 @@ function EngineChips({ track }: { track: number }) {
           {e.name}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** The track's resonant filter: cutoff and resonance (lockable, like the knobs) and LP/HP. Under the knobs, on every layout. */
+function FilterBar({ track, locks }: { track: number; locks: Record<string, number> | undefined }) {
+  const filter = useStore((s) => s.patterns[s.pattern].tracks[track].filter);
+  const cut = locks?.["fx.filterCut"] ?? filter.cut;
+  const res = locks?.["fx.filterRes"] ?? filter.res;
+  return (
+    <div className="filter-bar" role="group" aria-label="Track filter">
+      <Slider label="CUT" value={cut} def={filterOpen(filter.mode)} readout={formatFilterHz(cut)} locked={locks?.["fx.filterCut"] !== undefined} onChange={(v) => setLockable(track, "fx.filterCut", v)} />
+      <Slider label="RES" value={res} def={0} locked={locks?.["fx.filterRes"] !== undefined} onChange={(v) => setLockable(track, "fx.filterRes", v)} />
+      <div className="seg" role="group" aria-label="Filter type">
+        {FILTER_MODES.map((m, i) => (
+          <button key={m} type="button" className="chip" data-active={filter.mode === i} aria-pressed={filter.mode === i} onClick={() => setFilter(track, { mode: i as 0 | 1 })}>
+            {m}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -91,6 +111,7 @@ export function SoundPanel() {
         <span className="silk">{spec.engine}</span>
       </header>
       <EngineChips track={track} />
+      <div className="sound-main">
       <div className="knobs" style={{ "--n": spec.controls.length } as CSSProperties}>
         {spec.controls.map((c, i) => (
           <Knob
@@ -105,6 +126,8 @@ export function SoundPanel() {
             onTouch={() => { if (!playing && !plock) controller.audition(track); }}
           />
         ))}
+      </div>
+      <FilterBar track={track} locks={locks} />
       </div>
       <PlockBar track={track} />
       <div className="sends" role="group" aria-label="FX sends">

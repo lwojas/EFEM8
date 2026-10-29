@@ -15,7 +15,7 @@ import { TRACKS } from "./spec";
 import type { AppState, Step, TrackPattern } from "./state";
 
 /** What a lock drives: one of the track's sound controls, or one of its FX sends. */
-export type LockTarget = { kind: "sound"; control: number } | { kind: "send"; send: "dly" | "rev" };
+export type LockTarget = { kind: "sound"; control: number } | { kind: "send"; send: "dly" | "rev" } | { kind: "filter"; param: "cut" | "res" };
 
 export interface LockParam {
   /** Stable id: the key in `Step.parameterLocks` (saved with the project, so never renamed). */
@@ -29,7 +29,7 @@ export interface LockParam {
 // Per resolved track spec (a new object whenever the lineup is set), so an engine change drops the old lists.
 const cache = new WeakMap<object, readonly LockParam[]>();
 
-/** Every parameter of `track` a step can lock: its sound controls (first, in control order), then its delay and reverb sends. */
+/** Every parameter of `track` a step can lock: its sound controls (first, in control order), then its delay and reverb sends and its filter cutoff and resonance. */
 export function lockParams(track: number): readonly LockParam[] {
   const spec = TRACKS[track];
   let list = cache.get(spec);
@@ -38,6 +38,8 @@ export function lockParams(track: number): readonly LockParam[] {
       ...spec.controls.map((c, i): LockParam => ({ id: `instrument.${c.key}`, label: c.label, target: { kind: "sound", control: i }, base: (tp) => tp.sound[i] })),
       { id: "fx.delaySend", label: "DLY", target: { kind: "send", send: "dly" }, base: (tp) => tp.dly.send },
       { id: "fx.reverbSend", label: "REV", target: { kind: "send", send: "rev" }, base: (tp) => tp.rev.send },
+      { id: "fx.filterCut", label: "CUT", target: { kind: "filter", param: "cut" }, base: (tp) => tp.filter.cut },
+      { id: "fx.filterRes", label: "RES", target: { kind: "filter", param: "res" }, base: (tp) => tp.filter.res },
     ];
     cache.set(spec, list);
   }
@@ -76,10 +78,10 @@ export function clearLocks(step: Step): void {
   delete step.parameterLocks;
 }
 
-/** Drop a step's locks on sound controls, keeping its send locks. Mutates `step`. */
+/** Drop a step's locks on sound controls and the filter (what belongs to the engine or the filter's setting), keeping its send locks. Mutates `step`. */
 export function clearSoundLocks(step: Step): void {
   if (!step.parameterLocks) return;
-  for (const id of Object.keys(step.parameterLocks)) if (id.startsWith("instrument.")) delete step.parameterLocks[id];
+  for (const id of Object.keys(step.parameterLocks)) if (id.startsWith("instrument.") || id.startsWith("fx.filter")) delete step.parameterLocks[id];
   if (!Object.keys(step.parameterLocks).length) delete step.parameterLocks;
 }
 
