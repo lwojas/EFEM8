@@ -1,19 +1,21 @@
 # FM.8
 
-**A groovebox for the browser.** Six drums, an acid bass, an FM voice, nine performance effects you play by hand and
-record, and 64 patterns that chain into songs. It opens in one tap, runs on a phone as well as a desktop, and keeps
-everything you make.
+**An FM groovebox for the browser.** Eight track slots, and each plays one of eight curated FM engines: kick, snare,
+hat, tom, bass, pluck, bell and lead. Choose the instrument for a slot, turn five knobs, sequence it. Nine performance
+effects you play by hand and record, and 64 patterns that chain into songs. It opens in one tap, runs on a phone as well
+as a desktop, and keeps everything you make.
 
-FM.8 is not an emulation of any machine. It draws on the tradition of the classic grooveboxes (step sequencing,
-punch-in effects, a squelching bass line, a tight drum kit) and builds its own instrument from it: its own sound
-engine, its own workflow, its own interface.
+FM.8 is the second instrument in a family of compact grooveboxes that share one shell (see
+[REFERENCE_RESKIN.md](REFERENCE_RESKIN.md)). All the sound is FM, built on [webdsp](https://github.com/lwojas/webdsp):
+the range comes from the breadth of FM itself, with no subtractive synth.
 
 ## What you get
 
-- **Eight tracks.** Kick, snare, closed and open hat, clap, perc, **ACID** bass with accent and slide, and a two-operator
-  **FM** voice. Every track has a handful of macro knobs tuned so the whole travel sounds good.
+- **Eight tracks, eight engines.** Any engine in any slot, so the same screen is an FM drum machine, an FM bass-and-keys
+  box or anything between. Every engine has five macro knobs tuned so the whole travel sounds good; no operators,
+  ratios or algorithms in sight.
 - **A sequencer that gets out of the way.** 16 to 64 steps per pattern, tap to place, hold to accent, swing, a scale-aware
-  keyboard, and an arpeggiator on the melodic tracks.
+  keyboard, and an arpeggiator on the melodic engines. A slot's pads or piano roll follow its engine.
 - **Punch FX.** Hold a pad and the effect sweeps in: filter, drive, crush, phaser, flanger, dub echo, roll, reverb, filter
   sweep. Arm **WRITE** and the move, with its exact sweep shape, is recorded into the pattern and replayed on the audio clock.
 - **Proper mixing.** Level, mute and solo per track, plus an independent delay and reverb per track. Delay locks to the
@@ -28,17 +30,16 @@ engine, its own workflow, its own interface.
 ## Start
 
 1. Open FM.8 and **tap START**. A demo groove is already playing.
-2. Mute a track, load a different **KIT**, turn the **ACID** filter, hold **FILTER** on the punch pads.
+2. Mute a track, pick a different **ENGINE** for it (try **BELL** in the kick's slot), turn its knobs, hold **FILTER** on the punch pads.
 3. Press **WRITE**, hold a pad through a loop, and listen to your move come back round.
 
 The [User Guide](docs/guide/01-getting-started.md) takes it from there.
 
 ## Run it yourself
 
-FM.8 is built on [webdsp](https://github.com/lwojas/webdsp), which sits beside it as a sibling checkout.
+webdsp is a git dependency, installed by `npm install`.
 
 ```bash
-git clone https://github.com/lwojas/webdsp ../webdsp && (cd ../webdsp && npm ci)
 npm install
 npm run dev        # http://localhost:5175
 npm test           # the logic test suite
@@ -66,7 +67,7 @@ plugin loads the hosted app (or a dev server, see the doc). In the DAW it follow
 
 | | |
 |---|---|
-| Tracks | 8: 6 drums, ACID bass, FM |
+| Tracks | 8 slots, each one of 8 FM engines (KICK SNARE HAT TOM BASS PLUCK BELL LEAD) |
 | Patterns | 64, each 16 / 32 / 48 / 64 steps |
 | Tempo | 60 – 200 BPM, swing 50 – 75% |
 | Punch FX | 9, sweepable, writable |

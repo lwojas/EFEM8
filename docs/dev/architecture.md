@@ -110,7 +110,7 @@ See [Timing & scheduling](timing.md).
 
 ## Interface design
 
-The visual language lives in `concept/DESIGN/` (`DESIGN.md` tokens and a reference mock-up). `src/index.css` implements
+The visual language lives in `concept/styleguide/` (`DESIGN.md` tokens and a reference mock-up). `src/index.css` implements
 it: dark surfaces, three accent colours (`--drum`, `--bass`, `--tone`) and `--fx`, tabular mono readouts.
 
 Layout is CSS-only, by media query: phone (tabs, below 1100 px wide) and desktop (one page, 1100 px and up, with narrower

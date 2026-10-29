@@ -1,6 +1,6 @@
 # FM Groovebox v1: audit and implementation plan
 
-Status: **Stage 1 (audit) and Stage 2 (palette) complete. No product code changed yet.** Baseline on the unmodified
+Status: **Stages 1–3 done (audit, palette, implementation); Stage 4 validation partly done. See "As built" at the end.** Baseline on the unmodified
 reference: `npm test` 150/150 pass, `npm run build` passes (webdsp resolved via a `../webdsp` symlink, see Setup notes).
 
 ## 1. Audit
@@ -131,3 +131,32 @@ and Punch FX, mixer/sends, MIDI engine files. Only their `TRACKS[...]` lookups m
 ## Setup notes
 `package.json` points at `file:../webdsp`. In this layout webdsp lives at `Lech/webdsp`, so `efem/webdsp` is a symlink
 to it. Flattening the repo changes the relative path; fix then.
+
+## As built (Stage 3)
+
+Decisions D0–D5 were implemented as planned, with these specifics and deviations:
+
+- **`src/engines.ts`** holds `ENGINES` (the palette) and `DEFAULT_ENGINES`; `spec.ts` resolves slot + engine into `TrackSpec`.
+  `TRACKS` stayed as an array so ~90 call sites did not change, but it is now a **live view** of `state.engines`, updated by
+  `store.setState` before observers run. Components that read it call `useLineup()` to re-render on a change.
+- **All engines have exactly 5 knobs** (`KNOBS`), keyed positionally `k1..k5`. The reference's 6-knob acid bass became the
+  5-knob FM BASS. Ids are `track.N.sound.k1..k5`; MIDI CC 70–74 on the track's channel.
+- **Slots no longer have names**: a slot shows its engine's name. Accent colours follow role but all three are the concept's
+  aqua; tell them apart again by editing `--drum/--bass/--tone` in `index.css`.
+- **Presets/kits removed** (`presets.ts`, `TrackPattern.preset`): choosing an engine is choosing the instrument. Legacy
+  migrations removed from `persist.ts`. Saves carry `engines`; the lineup is set before a save's patterns are built or checked.
+- **Switching** is `actions.setEngine`: one state change that resets the slot's sound, mix, octave and sound locks in *all*
+  patterns, resets its arp, keeps the rhythm and converts notes by role; `controller` then calls `Groovebox.setEngine`, which
+  frees and recreates the webdsp instrument on the same bus and forgets the old instrument's caches.
+- **Desktop band:** the engine chips are three per row so the band is no taller than the reference's longest preset list.
+- Tests: 171 passing (new `test/engines.test.ts`: switching leaves no stale state, notes follow role, ids are slot-stable,
+  save/host-snapshot round-trip with the lineup, audio instrument swap). Browser-checked at 1280×800 and 390×844: no overflow,
+  no console errors, 64 engine switches while playing, lineup survives reload.
+
+### Not done / unverified
+- **Nobody has listened to it.** Ranges, `gainDb` and mix defaults are first-pass from webdsp's docs; the Digital Machines are
+  themselves "not yet tuned by ear". This is the main remaining work.
+- **VST path** (`vst:e2e`, `hostplay`, host snapshot with engines) not run: needs the webvst checkout and native toolchain.
+  The unit tests cover the snapshot round-trip and native-sequence compile only.
+- **User guide** (`docs/guide/`) and `docs/dev/extending.md` still describe the Pulse.8 lineup and presets.
+- TOM shares KICK's webdsp kind; keep or cut after listening.

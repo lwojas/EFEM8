@@ -100,5 +100,5 @@ A failing test or type error stops the deploy. The `--base` is the repository na
 
 - [Architecture](architecture.md) · [Audio graph](audio-graph.md) · [Timing](timing.md) · [State](state-and-persistence.md)
   · [Extending](extending.md) · [MIDI](midi.md)
-- `concept/DESIGN/` — the visual design tokens and reference mock-up.
+- `concept/styleguide/` — the visual design tokens and reference mock-up.
 - webdsp's own `ARCHITECTURE.md` and `docs/` — the engine FM.8 is built on.
