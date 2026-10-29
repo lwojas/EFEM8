@@ -7,7 +7,7 @@ import type { Sequence } from "webdsp";
 import { positionAt, steadySequence, transitionSequence, type NativeCtx, type Song } from "../src/engine/nativeseq";
 import { fromHostSnapshot, toHostSnapshot } from "../src/engine/persist";
 import { NUM_TRACKS } from "../src/engine/spec";
-import { MELODIC, StepCompiler } from "../src/engine/stepcompile";
+import { StepCompiler } from "../src/engine/stepcompile";
 import { initialState, newPattern, trackLast, trackStepAt, type Pattern } from "../src/engine/state";
 import { getState, replaceState } from "../src/engine/store";
 
@@ -120,7 +120,7 @@ describe("last step: playback (polymeter)", () => {
   it("locks follow the track's own loop", () => {
     const p = newPattern();
     p.tracks[1].last = 5;
-    p.tracks[1].steps[0].parameterLocks = { "instrument.tune": 0.9 };
+    p.tracks[1].steps[0].parameterLocks = { "instrument.k1": 0.9 };
     const seq = seqOf(p)!;
     const loop = seq.loops![0];
     expect(loop.events.some((e) => e.kind === "param")).toBe(true);
@@ -172,7 +172,7 @@ describe("last step: playback (polymeter)", () => {
   });
 
   it.each([[2, 5], [3, 5], [3, 8], [2, 3]])("an arpeggiated track (rate %i) loops with its loop: the host plays what the live scheduler would (last step %i)", (rate, last) => {
-    const track = MELODIC[0];
+    const track = 4; // BASS
     const p = newPattern();
     p.tracks[track].last = last;
     [0, 2, 3].forEach((i, k) => ((p.tracks[track].steps[i].on = true), (p.tracks[track].steps[i].note = 40 + 3 * k)));

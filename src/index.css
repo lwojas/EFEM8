@@ -428,9 +428,9 @@ button.oled { cursor: pointer; text-align: left; }
   .band .panel-title { margin-bottom: 6px; }
   .sound { display: grid; grid-template-columns: 150px minmax(0, 1fr) 118px; grid-template-rows: auto 1fr; grid-template-areas: "title knobs sends" "chips knobs sends"; column-gap: 16px; min-height: 0; }
   .sound .panel-title { grid-area: title; }
-  .sound .chips { grid-area: chips; align-content: start; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .sound .chips { grid-area: chips; align-content: start; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
   .sound .chips .silk { grid-column: 1 / -1; }
-  .sound .chip { min-height: 28px; padding: 2px 4px; font-size: 10px; min-width: 0; white-space: normal; line-height: 1.1; overflow-wrap: anywhere; }
+  .sound .chip { min-height: 28px; padding: 2px 2px; font-size: 10px; letter-spacing: 0; min-width: 0; white-space: normal; line-height: 1.1; overflow-wrap: anywhere; }
   .sound .knobs { grid-area: knobs; --ks: var(--ks-lg); margin: 0; align-self: center; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); }
   .sends { grid-area: sends; margin: 0; min-width: 0; align-self: stretch; justify-content: center; padding: 4px 10px 6px; background: transparent; }
   .sound .sends-knobs { grid-area: auto; align-self: auto; --ks: 40px; margin: auto 0; grid-template-columns: repeat(2, 48px); gap: 4px; }

@@ -259,7 +259,7 @@ describe("the cue transition", () => {
 });
 
 describe("parameter locks", () => {
-  const FILTER = TRACKS[BASS].controls[0];
+  const FILTER = TRACKS[BASS].controls[3];
   const lockOn = (p: Pattern, step: number, locks: Record<string, number>) => { p.tracks[BASS].steps[step].parameterLocks = locks; };
   const seqOf = (p: Pattern[], over: Partial<Song> = {}) => steadySequence(song(p, over), { patterns: p.map((_, i) => i), origin: 0 }, ctx)!;
 
@@ -270,7 +270,7 @@ describe("parameter locks", () => {
   it("writes the lock on its step and the base back on the next, to the instrument or the send bus", () => {
     const p = blank();
     p.tracks[BASS].sound[0] = 0.6;
-    lockOn(p, 4, { "instrument.cutoff": 0.2, "fx.delaySend": 0.9 });
+    lockOn(p, 4, { "instrument.k4": 0.2, "fx.delaySend": 0.9 });
     const ev = params(seqOf([p]).events);
     const at = (beat: number) => ev.filter((e) => e.beat === beat);
     expect(at(1)).toHaveLength(2);
@@ -291,7 +291,7 @@ describe("parameter locks", () => {
 
   it("follows swing, like the live scheduler", () => {
     const p = blank();
-    lockOn(p, 1, { "instrument.cutoff": 0.2 });
+    lockOn(p, 1, { "instrument.k4": 0.2 });
     expect(params(seqOf([p], { swing: 0.75 }).events)[0].beat).toBeCloseTo(0.25 + 0.125, 6);
   });
 
@@ -300,7 +300,7 @@ describe("parameter locks", () => {
     const b = blank();
     a.tracks[BASS].sound[0] = 0.3;
     b.tracks[BASS].sound[0] = 0.8; // patterns disagree: each bar start writes the sound
-    lockOn(b, 0, { "instrument.cutoff": 0.1 });
+    lockOn(b, 0, { "instrument.k4": 0.1 });
     const ev = params(seqOf([a, b]).events).filter((e) => e.beat === 4 && "instrument" in (e as any).target && e.param === FILTER.param);
     expect(ev).toHaveLength(1);
     expect(ev[0].value).toBeCloseTo(normToUnits(FILTER, 0.1), 6);

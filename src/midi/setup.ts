@@ -140,7 +140,7 @@ function syncRoute(): void {
 
 observe((next, prev) => {
   if (
-    next.audio !== prev.audio || next.focus !== prev.focus || next.arp !== prev.arp || next.selStep !== prev.selStep ||
+    next.audio !== prev.audio || next.focus !== prev.focus || next.engines !== prev.engines || next.arp !== prev.arp || next.selStep !== prev.selStep ||
     (next.patterns !== prev.patterns && controller.ready) || next.playPattern !== prev.playPattern
   ) syncRoute();
 });

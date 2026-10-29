@@ -240,10 +240,7 @@ export class Groovebox {
       const verb = runtime.addEffect(rev, EffectKind.Reverb);
       runtime.setEffectParameter(rev, verb, NodeParam.ReverbMix, 1);
       this.reverbFx.push(verb);
-      const inst = runtime.createInstrument(spec.kind, { bus });
-      this.inst.push(inst);
-      runtime.setInstrumentParameter(inst, InstrumentCommonParam.Gain, spec.gainDb);
-      for (const [param, value] of spec.fixed) runtime.setInstrumentParameter(inst, param, value);
+      this.inst.push(this.createVoice(spec, bus));
     }
     this.ids = {
       trackBus: this.trackBus, busB: this.busB, busC: this.busC, delayBus: this.delayBus, reverbBus: this.reverbBus,
@@ -287,6 +284,28 @@ export class Groovebox {
 
   note(track: number, params: InstrumentNoteParams): void {
     this.runtime.instrumentNoteOn(this.inst[track], params);
+  }
+
+  /** The engine in slot `track` changed (`TRACKS[track]` is the new one): swap the webdsp instrument on the same bus. The old one is
+   * freed, which drops its pending notes and silences it; everything the engine remembered about the old instrument is forgotten, so
+   * the next `applySound` sends the whole new sound. */
+  setEngine(track: number): void {
+    const spec = TRACKS[track];
+    const { runtime } = this;
+    runtime.removeInstrument(this.inst[track]);
+    // in place: `ids.inst` is this array
+    this.inst[track] = this.createVoice(spec, this.trackBus[track]);
+    this.soundCache[track].fill(NaN);
+    for (const key of this.lockedParams[track].values()) this.lockedKeys.delete(key);
+    this.lockedParams[track].clear();
+  }
+
+  private createVoice(spec: (typeof TRACKS)[number], bus: BusId): InstrumentId {
+    const { runtime } = this;
+    const inst = runtime.createInstrument(spec.kind, { bus });
+    runtime.setInstrumentParameter(inst, InstrumentCommonParam.Gain, spec.gainDb);
+    for (const [param, value] of spec.fixed) runtime.setInstrumentParameter(inst, param, value);
+    return inst;
   }
 
   /** Release held notes and drop scheduled ones (transport stop). */

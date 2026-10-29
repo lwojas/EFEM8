@@ -3,8 +3,8 @@
 // actions the UI uses. MIDI, a plugin host or automation all go through here; none of them knows
 // where a control lives on screen, and the UI knows nothing about them.
 //
-//   track.<1-8>.volume | mute | solo | delaySend | reverbSend | arp   (arp: melodic tracks)
-//   track.<1-8>.sound.<key>                                            (the track's macro knobs)
+//   track.<1-8>.volume | mute | solo | delaySend | reverbSend | arp   (arp: takes effect on melodic engines)
+//   track.<1-8>.sound.k<1-5>                                           (the track's five macro knobs, by position)
 //   pattern.select                                                     (0-based pattern slot)
 //
 // Sound knobs and the delay/reverb sends are lockable (plock.ts): in P-LOCK mode, with a step selected on the focused track, they read
@@ -21,7 +21,7 @@ import { effectiveValue, lockParam, lockStep } from "./plock";
 import { currentSource, withSource, type ParamSource } from "./source";
 import { defaultLevel, NUM_PATTERNS, type AppState, type TrackPattern } from "./state";
 import { defaultDelaySend, defaultReverbSend } from "./trackfx";
-import { defaultSound, TRACKS } from "./spec";
+import { KNOBS, TRACKS } from "./spec";
 import { observe } from "./store";
 
 export type ParamKind = "norm" | "int" | "bool";
@@ -54,11 +54,12 @@ const shown = (s: AppState, t: number, lockId: string): number => {
   return effectiveValue(tp(s, t), lockStep(s, t), p);
 };
 
+/** The registry is by slot and knob position, never by engine: what a knob does follows the engine in the slot, but its id,
+ * range (0..1) and the MIDI CC and automation lane bound to it do not change. Labels are read when asked for (`paramInfo`). */
 function build(): ParamDef[] {
   const defs: ParamDef[] = [];
-  for (const spec of TRACKS) {
-    const t = spec.id;
-    const name = spec.name;
+  for (let t = 0; t < TRACKS.length; t++) {
+    const name = `T${t + 1}`;
     defs.push(
       { id: idOf(t, "volume"), label: `${name} volume`, kind: "norm", min: 0, max: 1, def: defaultLevel(t), get: (s) => tp(s, t).level, set: (v) => setLevel(t, v) },
       { id: idOf(t, "mute"), label: `${name} mute`, kind: "bool", min: 0, max: 1, def: 0, get: (s) => (s.mutes[t] ? 1 : 0), set: (v) => setMute(t, v >= 1) },
@@ -66,27 +67,15 @@ function build(): ParamDef[] {
       { id: idOf(t, "delaySend"), label: `${name} delay send`, kind: "norm", min: 0, max: 1, def: defaultDelaySend(t), get: (s) => shown(s, t, "fx.delaySend"), set: (v) => setLockable(t, "fx.delaySend", v) },
       { id: idOf(t, "reverbSend"), label: `${name} reverb send`, kind: "norm", min: 0, max: 1, def: defaultReverbSend(t), get: (s) => shown(s, t, "fx.reverbSend"), set: (v) => setLockable(t, "fx.reverbSend", v) },
       { id: idOf(t, "punchSend"), label: `${name} punch FX send`, kind: "bool", min: 0, max: 1, def: 1, get: (s) => (tp(s, t).punch ? 1 : 0), set: (v) => setPunchSend(t, v >= 1) },
+      { id: idOf(t, "arp"), label: `${name} arpeggiator`, kind: "bool", min: 0, max: 1, def: 0, get: (s) => (s.arp[t].on ? 1 : 0), set: (v) => setArp(t, { on: v >= 1 }) },
     );
-    if (spec.role !== "drum") {
-      defs.push({ id: idOf(t, "arp"), label: `${name} arpeggiator`, kind: "bool", min: 0, max: 1, def: 0, get: (s) => (s.arp[t].on ? 1 : 0), set: (v) => setArp(t, { on: v >= 1 }) });
+    for (let i = 0; i < KNOBS; i++) {
+      const key = `k${i + 1}`;
+      defs.push({
+        id: idOf(t, `sound.${key}`), label: `${name} knob ${i + 1}`, kind: "norm", min: 0, max: 1, def: 0.5,
+        get: (s) => shown(s, t, `instrument.${key}`), set: (v) => setLockable(t, `instrument.${key}`, v),
+      });
     }
-    const sound = defaultSound(spec);
-    spec.controls.forEach((c, i) => {
-      const id = idOf(t, `sound.${c.key}`);
-      const lockId = `instrument.${c.key}`;
-      const label = `${name} ${c.label.toLowerCase()}`;
-      if (c.steps) {
-        // a stepped control is stored normalised but is a choice: expose the index
-        const top = c.steps.length - 1;
-        defs.push({
-          id, label, kind: "int", min: 0, max: top, def: Math.round(sound[i] * top), labels: c.steps,
-          get: (s) => Math.round(shown(s, t, lockId) * top),
-          set: (v) => setLockable(t, lockId, v / top),
-        });
-      } else {
-        defs.push({ id, label, kind: "norm", min: 0, max: 1, def: sound[i], get: (s) => shown(s, t, lockId), set: (v) => setLockable(t, lockId, v) });
-      }
-    });
   }
   defs.push({
     id: "pattern.select", label: "Pattern", kind: "int", min: 0, max: NUM_PATTERNS - 1, def: 0,

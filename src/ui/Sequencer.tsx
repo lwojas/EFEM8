@@ -11,7 +11,7 @@ import { isChromatic, notesInRange, rootAtOrAbove, rootAtOrBelow, type ProjectSc
 import { hasLocks } from "../engine/plock";
 import { noteName, TRACKS } from "../engine/spec";
 import { DEFAULT_GATE, FX_LANES, GATE_BUTTONS, GATES, LENGTHS, PAGE, trackLast } from "../engine/state";
-import { getState, setState, useStore } from "../engine/store";
+import { getState, setState, useLineup, useStore } from "../engine/store";
 import { ArpControl } from "./ArpControl";
 import { Stepper, usePress } from "./controls";
 import { Modal } from "./Modal";
@@ -154,6 +154,7 @@ function SeqViewTabs() {
 // --- track rail: select / mute / solo ---------------------------------------------------------------
 
 function RailItem({ track }: { track: number }) {
+  useLineup();
   const spec = TRACKS[track];
   const focused = useStore((s) => s.focus === track);
   const muted = useStore((s) => s.mutes[track]);
@@ -209,6 +210,7 @@ interface PadProps {
 
 /** One step. Tap toggles/selects, hold accents/selects. The playhead lights it via data-play (see playhead.ts). */
 const Pad = memo(function Pad({ track, abs, on, acc, slide, selected, outside, locked, note }: PadProps) {
+  useLineup();
   const press = usePress(() => tapStep(track, abs), () => holdStep(track, abs));
   const playRef = usePlayheadCell(abs, track);
   return (
@@ -238,6 +240,7 @@ const Pad = memo(function Pad({ track, abs, on, acc, slide, selected, outside, l
 });
 
 function Pads({ track }: { track: number }) {
+  useLineup();
   const page = useStore((s) => s.page);
   const tp = useStore((s) => s.patterns[s.pattern].tracks[track]);
   const selStep = useStore((s) => (s.focus === track ? s.selStep : -1));
@@ -298,9 +301,9 @@ function GateControl({ track }: { track: number }) {
 }
 
 function TrackHeader({ track }: { track: number }) {
+  useLineup();
   const spec = TRACKS[track];
   const melodic = spec.role !== "drum";
-  const preset = useStore((s) => s.patterns[s.pattern].tracks[track].preset);
   const phone = useMedia("(max-width: 699px)");
   const plock = useStore((s) => s.plock);
   return (
@@ -308,7 +311,7 @@ function TrackHeader({ track }: { track: number }) {
       <div className="track-id">
         <span className="track-no">T{track + 1}</span>
         <strong>{spec.name}</strong>
-        <span className="silk">{preset || spec.engine}</span>
+        <span className="silk">{spec.engine}</span>
       </div>
       <div className="track-btns">
         {melodic && <GateControl track={track} />}
@@ -325,6 +328,7 @@ function TrackHeader({ track }: { track: number }) {
 
 /** One button for the track's sequencer actions: RND, CLR and the last step (where the track wraps, counted over all the bars). */
 function SeqMenu({ track }: { track: number }) {
+  useLineup();
   const [open, setOpen] = useState(false);
   const length = useStore((s) => s.patterns[s.pattern].length);
   const last = useStore((s) => trackLast(s.patterns[s.pattern], track));
@@ -442,6 +446,7 @@ function PianoKey({ track, note, ...rest }: { track: number; note: number } & Bu
 /** The window of the keyboard on screen (two octaves wide, one on phones), kept on the selected note,
  * and what the shift arrows move between. Chromatic windows start on a C, scale windows on the root. */
 function useKeyWindow(track: number, step: number, scale: ProjectScale) {
+  useLineup();
   const spec = TRACKS[track];
   const wide = useMedia(WIDE);
   const octaves = wide ? 2 : 1;
@@ -532,6 +537,7 @@ function Keys({ track, step, scale }: { track: number; step: number; scale: Proj
 }
 
 function StepEditor({ track }: { track: number }) {
+  useLineup();
   const spec = TRACKS[track];
   // In P-LOCK mode a selected step is only a target for locks: its note, flags and gate are not edited from here.
   const plock = useStore((s) => s.plock);
@@ -568,6 +574,7 @@ function StepEditor({ track }: { track: number }) {
 }
 
 export function SequencerPanel() {
+  useLineup();
   const track = useStore((s) => s.focus);
   const view = useStore((s) => s.seqView);
   return (

@@ -1,7 +1,9 @@
 // The whole application state, and the pure functions that edit a pattern.
 // Nothing here touches audio or React.
 import { storageKey } from "../product";
-import { defaultSound, NUM_TRACKS, TRACKS, BASS_TRACK, TONE_TRACK } from "./spec";
+import { DEFAULT_ENGINES } from "../engines";
+import { defaultSound, NUM_TRACKS, TRACKS, unitsToNorm, type TrackSpec } from "./spec";
+import { setLock, clearSoundLocks } from "./plock";
 import { defaultArp, type ArpSettings } from "./arp";
 import { defaultMangler } from "./mangler";
 import { defaultScale, isChromatic, notesInRange, rootAtOrAbove, type ProjectScale } from "./scale";
@@ -57,8 +59,6 @@ export interface TrackPattern {
   punch: boolean;
   /** Octave shift for melodic tracks. */
   oct: number;
-  /** Name of the preset last loaded into this track (cosmetic). */
-  preset: string;
   /** Last step (1-based, absolute across the bars): the track plays steps 1..last and wraps. Absent (older saves, and whenever the
    * pattern length is set) means the whole pattern. Steps past it keep their data, they just do not play. See `trackLast`. */
   last?: number;
@@ -126,6 +126,8 @@ export type Tab = "seq" | "sound" | "mix" | "fx" | "ptn";
 
 export interface AppState {
   // persisted
+  /** The engine (index into `ENGINES`) in each of the eight track slots. Project-wide, not per pattern: it is what is plugged in. */
+  engines: number[];
   /** Name of the loaded or last-saved project; empty for an unsaved one. */
   projectName: string;
   patterns: Pattern[];
@@ -189,7 +191,6 @@ export function newTrackPattern(track: number): TrackPattern {
     rev: newReverb(track),
     punch: true,
     oct: 0,
-    preset: "",
   };
 }
 
@@ -226,18 +227,22 @@ const line = (p: Pattern, track: number, notes: Array<[step: number, note: numbe
 
 export function demoPattern(): Pattern {
   const p = newPattern();
+  // the default lineup: KICK SNARE HAT TOM BASS PLUCK BELL LEAD
   hits(p, 0, [0, 4, 8, 12], [0, 8]);
   hits(p, 1, [4, 12], [12]);
-  hits(p, 2, [0, 2, 4, 6, 8, 10, 12, 14, 15], [2, 10]);
-  hits(p, 3, [6, 14]);
-  hits(p, 4, [4, 12, 13]);
-  hits(p, 5, [3, 7, 11, 14], [7]);
-  line(p, BASS_TRACK, [
+  hits(p, 2, [0, 2, 4, 6, 8, 10, 12, 14], [2, 10]);
+  // the last off-beat hat rings open: a lock on its DECAY, the way a hat is opened on this machine
+  hits(p, 2, [15]);
+  setLock(p.tracks[2].steps[15], "instrument.k2", unitsToNorm(TRACKS[2].controls[1], 0.4));
+  hits(p, 3, [6, 11, 14], [11]);
+  line(p, 4, [
     [0, 24, "a"], [2, 24], [3, 36, "s"], [6, 27, "a"], [8, 24], [10, 31, "s"], [11, 29], [14, 27, "a"], [15, 36, "s"],
   ]);
-  line(p, TONE_TRACK, [[0, 55], [3, 58], [7, 62, "a"], [10, 58], [12, 55]]);
-  // start with a bright kit and acid preset values (loaded by the presets module at boot)
-  p.tracks[TONE_TRACK].level = 0.55;
+  line(p, 5, [[0, 55], [3, 58], [7, 62, "a"], [10, 58], [12, 55]]);
+  line(p, 6, [[2, 67], [9, 70, "a"], [14, 74]]);
+  line(p, 7, [[0, 62], [6, 65, "s"], [8, 69]]);
+  p.tracks[6].level = 0.5;
+  p.tracks[7].level = 0.45;
   return p;
 }
 
@@ -269,15 +274,13 @@ export function randomizeTrack(p: Pattern, track: number, rnd: () => number = Ma
   const steps = p.tracks[track].steps;
   const pick = <T,>(a: readonly T[]) => a[Math.floor(rnd() * a.length)];
   if (spec.role === "drum") {
-    const density: Record<number, number[]> = {
-      0: [0.9, 0.05, 0.35, 0.05],
-      1: [0, 0.8, 0.05, 0.8],
-      2: [0.5, 0.9, 0.5, 0.9],
-      3: [0.02, 0.45, 0.02, 0.2],
-      4: [0, 0.6, 0.05, 0.5],
-      5: [0.2, 0.3, 0.3, 0.35],
+    const density: Record<string, number[]> = {
+      KICK: [0.9, 0.05, 0.35, 0.05],
+      SNARE: [0, 0.8, 0.05, 0.8],
+      HAT: [0.5, 0.9, 0.5, 0.9],
+      TOM: [0.2, 0.3, 0.3, 0.35],
     };
-    const d = density[track] ?? [0.3, 0.3, 0.3, 0.3];
+    const d = density[spec.name] ?? [0.3, 0.3, 0.3, 0.3];
     for (let i = 0; i < len; i++) {
       const beatPos = i % 4;
       steps[i].on = rnd() < d[beatPos];
@@ -310,11 +313,42 @@ export function randomizeTrack(p: Pattern, track: number, rnd: () => number = Ma
   }
 }
 
+/**
+ * Put the engine now in slot `track` (`TRACKS[track]`, so the lineup must already be set) to work in `p`, which held an engine of
+ * role `from`. Nothing of the old engine's sound survives: the knobs return to the new engine's defaults, sound locks on the steps
+ * are dropped (send locks stay), and the track's fader, sends and octave return to the engine's starting mix. The rhythm survives:
+ * which steps are on, their accents and lengths. Notes follow the role: a drum has none, a melodic step gets the engine's default
+ * note when it comes from a drum and is kept inside the new range when it comes from another melodic engine.
+ * Mutates `p`.
+ */
+export function applyEngine(p: Pattern, track: number, from: TrackSpec["role"]) {
+  const spec = TRACKS[track];
+  const tp = p.tracks[track];
+  tp.sound = defaultSound(spec);
+  tp.level = spec.mix.level;
+  tp.dly = newDelay(track);
+  tp.rev = newReverb(track);
+  tp.oct = 0;
+  const lo = spec.noteLo ?? 0;
+  const hi = spec.noteHi ?? 127;
+  for (const s of tp.steps) {
+    clearSoundLocks(s);
+    if (spec.role === "drum") {
+      s.note = 0;
+      s.slide = false;
+      delete s.gate;
+    } else {
+      s.note = from === "drum" ? spec.defaultNote ?? 0 : Math.min(hi, Math.max(lo, s.note));
+    }
+  }
+}
+
 // --- app state -------------------------------------------------------------------------------
 
 export function initialState(): AppState {
   return {
     projectName: "",
+    engines: [...DEFAULT_ENGINES],
     patterns: Array.from({ length: NUM_PATTERNS }, (_, i) => (i === 0 ? demoPattern() : newPattern())),
     chain: [],
     chainOn: false,
@@ -325,7 +359,7 @@ export function initialState(): AppState {
     arp: Array.from({ length: NUM_TRACKS }, defaultArp),
     mutes: new Array(NUM_TRACKS).fill(false),
     solos: new Array(NUM_TRACKS).fill(false),
-    focus: BASS_TRACK,
+    focus: Math.max(0, TRACKS.findIndex((t) => t.role === "bass")),
     page: 0,
     selStep: -1,
     follow: false,

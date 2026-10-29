@@ -11,7 +11,8 @@ import { DEFAULT_GATE, GATES, trackLast, trackStepAt, type Pattern } from "./sta
 
 export const VEL_NORMAL = 0.7;
 export const VEL_ACCENT = 1;
-export const MELODIC = TRACKS.filter((t) => t.role !== "drum").map((t) => t.id);
+/** Every track id: an arp exists for each slot, since a slot's engine (and so whether it has an arp) can change. */
+export const ALL_TRACKS: readonly number[] = Array.from({ length: NUM_TRACKS }, (_, i) => i);
 
 /** A step's gate length in steps (saves from before gates existed have none; so can a stale index). */
 export const gateSteps = (gate: number | undefined): number => (GATES[gate ?? DEFAULT_GATE] ?? GATES[DEFAULT_GATE]).len;
@@ -39,7 +40,7 @@ export class StepCompiler {
    * as the song step count at which each is released. */
   private seqHolds = new Map<number, Array<{ note: number; end: number }>>();
 
-  constructor(readonly arps: Map<number, Arpeggiator> = new Map(MELODIC.map((t) => [t, new Arpeggiator()]))) {}
+  constructor(readonly arps: Map<number, Arpeggiator> = new Map(ALL_TRACKS.map((t) => [t, new Arpeggiator()]))) {}
 
   /** The grid restarted (transport start/stop): drop the sequencer's holds and line the arps up again. */
   realign(): void {

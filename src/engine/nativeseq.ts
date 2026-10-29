@@ -29,7 +29,7 @@ import { lockWrite, manglerWrites, mixWrites, soundWrites, trackFxWrites, type G
 import { baseValues, laneLayers, layeredTarget, MANGLER_KEYS, type ManglerKey } from "./mangler";
 import { lockParams } from "./plock";
 import { NUM_TRACKS } from "./spec";
-import { StepCompiler, MELODIC, type StepNote } from "./stepcompile";
+import { StepCompiler, ALL_TRACKS, type StepNote } from "./stepcompile";
 import type { ArpSettings } from "./arp";
 import { trackLast, trackStepAt, type Pattern } from "./state";
 
@@ -203,7 +203,7 @@ function cycleEvents(song: Song, layout: Layout, ctx: NativeCtx): Loop & { loops
   const events: SequenceEvent[] = [];
 
   // notes: the same step compile the live scheduler uses, one pattern after another
-  const compiler = new StepCompiler(new Map(MELODIC.map((t) => [t, new Arpeggiator()])));
+  const compiler = new StepCompiler(new Map(ALL_TRACKS.map((t) => [t, new Arpeggiator()])));
   const clock = { stepDur: REF_STEP_SECONDS, swing: song.swing, arp: song.arp, rnd: mulberry32(0x9e3779b9) };
   // A pattern that repeats for good lets its shorter tracks loop on their own: each becomes a loop of its own length (below) and is left
   // out of the cycle. In any other layout a pattern is played once per cycle, so a shorter track just wraps inside it.
@@ -266,7 +266,7 @@ function trackLoop(song: Song, pattern: number, track: number, ctx: NativeCtx): 
   const pat = song.patterns[pattern];
   const last = trackLast(pat, track);
   const steps = last % 2 === 0 ? last : last * 2;
-  const compiler = new StepCompiler(new Map(MELODIC.map((t) => [t, new Arpeggiator()])));
+  const compiler = new StepCompiler(new Map(ALL_TRACKS.map((t) => [t, new Arpeggiator()])));
   const clock = { stepDur: REF_STEP_SECONDS, swing: song.swing, arp: song.arp, rnd: mulberry32(0x9e3779b9) };
   const events: SequenceEvent[] = [];
   const slots: LockSlot[] = [];

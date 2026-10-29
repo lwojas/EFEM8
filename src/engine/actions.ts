@@ -3,9 +3,10 @@
 import { normalizeArp, type ArpSettings } from "./arp";
 import { controller } from "./controller";
 import { clearLocks, lockParam, setLock, soundParam } from "./plock";
-import { kitSounds, KITS, presetsFor, synthSound } from "./presets";
-import { TRACKS } from "./spec";
-import { clearTrackSteps, GATES, newPattern, PAGE, randomizeTrack } from "./state";
+import { ENGINES } from "../engines";
+import { defaultArp } from "./arp";
+import { setLineup, TRACKS } from "./spec";
+import { applyEngine, clearTrackSteps, GATES, newPattern, PAGE, randomizeTrack, withPattern } from "./state";
 import { BEAT_DIVISIONS, type DelaySend, type ReverbSend } from "./trackfx";
 import { editPattern, getState, setState } from "./store";
 
@@ -127,7 +128,6 @@ export function clearStepLocks(track: number, step: number): void {
 export function setSound(track: number, control: number, value: number): void {
   editPattern((p) => {
     p.tracks[track].sound[control] = clamp01(value);
-    p.tracks[track].preset = "";
   });
 }
 
@@ -193,25 +193,24 @@ export function setSweep(index: number): void {
   editPattern((p) => { p.mangler.sweep = index; });
 }
 
-export function loadKit(index: number): void {
-  const kit = KITS[index];
-  const sounds = kitSounds(kit);
-  editPattern((p) => {
-    sounds.forEach((sound, t) => {
-      p.tracks[t].sound = sound;
-      p.tracks[t].preset = kit.name;
-    });
-  });
-  controller.audition(0);
-}
-
-export function loadSynthPreset(track: number, index: number): void {
-  const preset = presetsFor(track)[index];
-  if (!preset) return;
-  const sound = synthSound(track, preset);
-  editPattern((p) => {
-    p.tracks[track].sound = sound;
-    p.tracks[track].preset = preset.name;
+/**
+ * Put engine `engine` (index into `ENGINES`) in slot `track`. One state change, so nothing sees the new engine with the old
+ * engine's data: the track's sound, mix and sound locks are reset in every pattern (`applyEngine`), its arpeggiator returns to
+ * its defaults, and the audio layer swaps the instrument when it hears `engines` change. The steps' rhythm is kept.
+ */
+export function setEngine(track: number, engine: number): void {
+  const st = getState();
+  if (!ENGINES[engine] || st.engines[track] === engine) return;
+  const from = TRACKS[track].role;
+  const engines = st.engines.slice();
+  engines[track] = engine;
+  // `applyEngine` reads the new engine through `TRACKS`; `setState` would set it too, but only after the patterns are built
+  setLineup(engines);
+  setState({
+    engines,
+    patterns: st.patterns.map((p) => withPattern(p, (d) => applyEngine(d, track, from))),
+    arp: st.arp.map((a, i) => (i === track ? defaultArp() : a)),
+    ...(st.focus === track ? { selStep: -1 } : {}),
   });
   controller.audition(track);
 }

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ARP_RATES, Arpeggiator, arpIndex, arpPool, normalizeArp, type ArpDirection, type ArpSettings } from "../src/engine/arp";
 import { baseValues, layeredTarget, manglerTarget, PUNCHES, sweepLevel } from "../src/engine/mangler";
 import { BEAT_DIVISIONS, freeDelaySeconds } from "../src/engine/trackfx";
-import { KITS, kitSounds, BASS_PRESETS, synthSound } from "../src/engine/presets";
-import { defaultSound, normToUnits, TRACKS, unitsToNorm, noteName } from "../src/engine/spec";
+import { DEFAULT_ENGINES, ENGINES } from "../src/engines";
+import { defaultSound, KNOBS, normToUnits, TRACKS, unitsToNorm, noteName } from "../src/engine/spec";
 import { isInScale, defaultScale, isChromatic, normalizeScale, notesInRange, rootAtOrAbove, rootAtOrBelow, SCALE_PRESETS, SCALES, withPreset, withRoot } from "../src/engine/scale";
 import { demoPattern, FX_LANES, newPattern, pickWriteLane, randomizeTrack } from "../src/engine/state";
 
@@ -15,18 +15,27 @@ describe("control mapping", () => {
     }
   });
   it("keeps every default and preset inside its sweet-spot range", () => {
-    for (const t of TRACKS) for (const c of t.controls) {
+    for (const e of ENGINES) for (const c of e.controls) {
       expect(c.def).toBeGreaterThanOrEqual(c.lo - 1e-9);
       expect(c.def).toBeLessThanOrEqual(c.hi + 1e-9);
     }
-    for (const s of defaultSound(TRACKS[0])) expect(s).toBeGreaterThanOrEqual(0);
-    for (const k of KITS) for (const s of kitSounds(k).flat()) expect(s).toBeGreaterThanOrEqual(0);
-    for (const p of BASS_PRESETS) expect(synthSound(6, p)).toHaveLength(6);
+    for (const e of ENGINES) for (const s of defaultSound({ ...TRACKS[0], controls: e.controls })) expect(s).toBeGreaterThanOrEqual(0);
   });
-  it("has the 6 + 1 + 1 track layout with at most 5 controls each", () => {
+  it("has exactly 8 tracks, and every engine exposes the same KNOBS positional controls", () => {
     expect(TRACKS).toHaveLength(8);
-    expect(TRACKS.filter((t) => t.role === "drum")).toHaveLength(6);
-    for (const t of TRACKS) expect(t.controls.length).toBeLessThanOrEqual(t.role === "bass" ? 6 : 5);
+    expect(DEFAULT_ENGINES).toHaveLength(8);
+    for (const e of ENGINES) {
+      expect(e.controls).toHaveLength(KNOBS);
+      e.controls.forEach((c, i) => expect(c.key).toBe(`k${i + 1}`));
+    }
+  });
+  it("gives each melodic engine a note range around its root and a default note inside it", () => {
+    for (const e of ENGINES.filter((x) => x.role !== "drum")) {
+      expect(e.rootMidi).toBeDefined();
+      expect(e.defaultNote!).toBeGreaterThanOrEqual(e.noteLo!);
+      expect(e.defaultNote!).toBeLessThanOrEqual(e.noteHi!);
+    }
+    for (const e of ENGINES.filter((x) => x.role === "drum")) expect(e.rootMidi).toBeUndefined();
   });
   it("names notes with C1 = MIDI 24", () => {
     expect(noteName(24)).toBe("C1");
@@ -158,7 +167,7 @@ describe("patterns", () => {
   it("demo groove has a kick and bass line", () => {
     const d = demoPattern();
     expect(d.tracks[0].steps.filter((s) => s.on).length).toBe(4);
-    expect(d.tracks[6].steps.some((s) => s.slide)).toBe(true);
+    expect(d.tracks[4].steps.some((s) => s.slide)).toBe(true);
   });
 });
 

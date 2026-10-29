@@ -31,7 +31,7 @@ describe("mapping", () => {
   it("compiles against the real parameters with no warnings", () => {
     expect(compileMapping(midiMapping, bus).warnings).toEqual([]);
   });
-  it("maps every sound knob of every track (the table in mapping.ts matches the spec)", () => {
+  it("maps every sound knob of every track, by position (the same whatever engine is in the slot)", () => {
     const mapped = compileMapping(midiMapping, bus).byParam;
     for (const t of TRACKS) for (const c of t.controls) expect(mapped.has(`track.${t.id + 1}.sound.${c.key}`)).toBe(true);
   });
@@ -101,12 +101,12 @@ describe("input", () => {
     control.handle([0xb0, 20, 63]);
     expect(getState().mutes[0]).toBe(false);
   });
-  it("sets a stepped control by index (FM colour) and a sound knob by position", () => {
+  it("sets a sound knob by position: CC 70 is knob 1 and CC 74 knob 5 of the track's channel, whatever engine it holds", () => {
     const { control } = rig();
-    control.handle([0xb7, 70, 127]); // channel 8 = FM, first knob is COLOR (8 steps)
-    expect(getParam("track.8.sound.color", getState())).toBe(7);
-    control.handle([0xb6, 74, 0]); // channel 7 = ACID, CC74 = filter cutoff
-    expect(getState().patterns[0].tracks[6].sound[0]).toBe(0);
+    control.handle([0xb4, 70, 127]); // channel 5 = BASS, first knob is COLOR (8 steps, normalised)
+    expect(getParam("track.5.sound.k1", getState())).toBe(1);
+    control.handle([0xb6, 74, 0]); // channel 7 = BELL, CC74 = knob 5
+    expect(getState().patterns[0].tracks[6].sound[4]).toBe(0);
   });
   it("uses the default channel for a parameter without one, and an override otherwise", () => {
     const m: MidiMapping = { defaultChannel: 5, parameters: { "track.1.volume": { cc: 7 }, "track.2.volume": { cc: 7, channel: 2 } } };

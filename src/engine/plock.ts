@@ -26,18 +26,20 @@ export interface LockParam {
   base(tp: TrackPattern): number;
 }
 
-const cache = new Map<number, readonly LockParam[]>();
+// Per resolved track spec (a new object whenever the lineup is set), so an engine change drops the old lists.
+const cache = new WeakMap<object, readonly LockParam[]>();
 
 /** Every parameter of `track` a step can lock: its sound controls (first, in control order), then its delay and reverb sends. */
 export function lockParams(track: number): readonly LockParam[] {
-  let list = cache.get(track);
+  const spec = TRACKS[track];
+  let list = cache.get(spec);
   if (!list) {
     list = [
-      ...TRACKS[track].controls.map((c, i): LockParam => ({ id: `instrument.${c.key}`, label: c.label, target: { kind: "sound", control: i }, base: (tp) => tp.sound[i] })),
+      ...spec.controls.map((c, i): LockParam => ({ id: `instrument.${c.key}`, label: c.label, target: { kind: "sound", control: i }, base: (tp) => tp.sound[i] })),
       { id: "fx.delaySend", label: "DLY", target: { kind: "send", send: "dly" }, base: (tp) => tp.dly.send },
       { id: "fx.reverbSend", label: "REV", target: { kind: "send", send: "rev" }, base: (tp) => tp.rev.send },
     ];
-    cache.set(track, list);
+    cache.set(spec, list);
   }
   return list;
 }
@@ -72,6 +74,13 @@ export function setLock(step: Step, id: string, value: number): void {
 /** Drop all of a step's locks (the step stays). Mutates `step`. */
 export function clearLocks(step: Step): void {
   delete step.parameterLocks;
+}
+
+/** Drop a step's locks on sound controls, keeping its send locks. Mutates `step`. */
+export function clearSoundLocks(step: Step): void {
+  if (!step.parameterLocks) return;
+  for (const id of Object.keys(step.parameterLocks)) if (id.startsWith("instrument.")) delete step.parameterLocks[id];
+  if (!Object.keys(step.parameterLocks).length) delete step.parameterLocks;
 }
 
 /** Locks from a save, cleaned: known parameters of the track only, finite values clamped to 0..1. */

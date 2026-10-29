@@ -1,6 +1,7 @@
 // A tiny external store: one immutable AppState, selector subscriptions via useSyncExternalStore.
 // Selectors should return primitives or stable references so only the components that care re-render.
 import { useSyncExternalStore } from "react";
+import { setLineup } from "./spec";
 import { initialState, withPattern, type AppState, type Pattern } from "./state";
 
 let state: AppState = initialState();
@@ -13,6 +14,8 @@ export function setState(patch: Partial<AppState> | ((s: AppState) => Partial<Ap
   const prev = state;
   const p = typeof patch === "function" ? patch(prev) : patch;
   state = { ...prev, ...p };
+  // the lineup is read through `TRACKS` by everything that observes this change: bring it up to date first
+  if (p.engines) setLineup(state.engines);
   for (const o of observers) o(state, prev);
   for (const l of listeners) l();
 }
@@ -27,6 +30,10 @@ const subscribe = (l: () => void) => {
   listeners.add(l);
   return () => listeners.delete(l);
 };
+
+/** Subscribe to the lineup. `TRACKS` is a live view of `state.engines`, so a component that reads a track's spec while rendering
+ * calls this to be rendered again when an engine changes (the selectors it also uses may not change by themselves). */
+export const useLineup = (): number[] => useStore((s) => s.engines);
 
 export function useStore<T>(selector: (s: AppState) => T): T {
   return useSyncExternalStore(subscribe, () => selector(state));

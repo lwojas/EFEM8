@@ -29,8 +29,8 @@ describe("per-track mix defaults (TrackSpec.mix)", () => {
     });
   });
   it("matches the shipped values", () => {
-    expect(TRACKS.map((t) => t.mix.level)).toEqual([0.85, 0.75, 0.55, 0.55, 0.7, 0.6, 0.78, 0.62]);
-    expect(TRACKS.map((t) => t.mix.delay)).toEqual([0, 0.15, 0.12, 0.25, 0.3, 0.3, 0.1, 0.3]);
-    expect(TRACKS.map((t) => t.mix.reverb)).toEqual([0, 0.12, 0, 0, 0.18, 0.1, 0, 0.15]);
+    expect(TRACKS.map((t) => t.mix.level)).toEqual([0.85, 0.75, 0.55, 0.6, 0.78, 0.62, 0.55, 0.5]);
+    expect(TRACKS.map((t) => t.mix.delay)).toEqual([0, 0.15, 0.15, 0.3, 0.1, 0.3, 0.3, 0.3]);
+    expect(TRACKS.map((t) => t.mix.reverb)).toEqual([0, 0.12, 0, 0.1, 0, 0.15, 0.3, 0.15]);
   });
 });

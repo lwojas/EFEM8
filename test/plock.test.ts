@@ -2,13 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearStepLocks, setLockable, setPlockMode, setSound, setSoundControl, tapStep } from "../src/engine/actions";
 import { Groovebox } from "../src/engine/audio";
 import { effectiveSound, effectiveValue, hasLocks, lockParams, sanitizeLocks } from "../src/engine/plock";
-import { BASS_TRACK } from "../src/engine/spec";
 import { initialState } from "../src/engine/state";
 import { getState, replaceState, setState } from "../src/engine/store";
 
-const T = BASS_TRACK;
-const CUT = 0; // FILTER
-const RES = 3; // RES
+const T = 4; // BASS
+const CUT = 3; // TONE
+const RES = 2; // BITE
 const tp = () => getState().patterns[getState().pattern].tracks[T];
 const step = (i: number) => tp().steps[i];
 const eff = (i: number, c: number) => effectiveValue(tp(), step(i), lockParams(T)[c]);
@@ -52,7 +51,7 @@ describe("parameter locks: data", () => {
     setSoundControl(T, CUT, 0.2);
     setSoundControl(T, RES, 0.8);
     setSoundControl(T, CUT, 0.3); // changing cutoff leaves resonance
-    expect(step(4).parameterLocks).toEqual({ "instrument.cutoff": 0.3, "instrument.reso": 0.8 });
+    expect(step(4).parameterLocks).toEqual({ "instrument.k4": 0.3, "instrument.k3": 0.8 });
     setState({ selStep: 8 });
     setSoundControl(T, CUT, 0.9);
     setState({ selStep: 12 });
@@ -88,7 +87,7 @@ describe("P-LOCK mode on the sequencer", () => {
     tapStep(T, 1);
     setSoundControl(T, CUT, 0.3);
     expect(step(1).on).toBe(false);
-    expect(step(1).parameterLocks).toEqual({ "instrument.cutoff": 0.3 });
+    expect(step(1).parameterLocks).toEqual({ "instrument.k4": 0.3 });
   });
 
   it("returns to normal add/remove editing on exit, locks intact", () => {
@@ -96,13 +95,13 @@ describe("P-LOCK mode on the sequencer", () => {
     tapStep(T, 1);
     setSoundControl(T, CUT, 0.3);
     setPlockMode(false);
-    expect(step(1).parameterLocks).toEqual({ "instrument.cutoff": 0.3 });
+    expect(step(1).parameterLocks).toEqual({ "instrument.k4": 0.3 });
     setState({ selStep: -1 });
     tapStep(T, 1);
     expect(step(1).on).toBe(true);
     tapStep(T, 1);
     expect(step(1).on).toBe(false);
-    expect(step(1).parameterLocks).toEqual({ "instrument.cutoff": 0.3 });
+    expect(step(1).parameterLocks).toEqual({ "instrument.k4": 0.3 });
   });
 });
 
@@ -112,8 +111,8 @@ describe("persistence", () => {
     setState({ selStep: 2 });
     setSoundControl(T, CUT, 0.25);
     const back = JSON.parse(JSON.stringify(step(2)));
-    expect(sanitizeLocks(T, back.parameterLocks)).toEqual({ "instrument.cutoff": 0.25 });
-    expect(sanitizeLocks(T, { "instrument.nope": 1, "instrument.cutoff": 7, "instrument.reso": "x" })).toEqual({ "instrument.cutoff": 1 });
+    expect(sanitizeLocks(T, back.parameterLocks)).toEqual({ "instrument.k4": 0.25 });
+    expect(sanitizeLocks(T, { "instrument.nope": 1, "instrument.k4": 7, "instrument.k3": "x" })).toEqual({ "instrument.k4": 1 });
     expect(sanitizeLocks(T, {})).toBeUndefined();
     expect(sanitizeLocks(T, undefined)).toBeUndefined();
   });
@@ -209,15 +208,15 @@ describe("sends and MIDI-mapped knobs", () => {
     setSound(T, CUT, 0.6);
     setPlockMode(true);
     setState({ selStep: 5 });
-    setParam("track.7.sound.cutoff", 0.25, "midi");
-    expect(step(5).parameterLocks).toEqual({ "instrument.cutoff": 0.25 });
+    setParam("track.5.sound.k4", 0.25, "midi");
+    expect(step(5).parameterLocks).toEqual({ "instrument.k4": 0.25 });
     expect(tp().sound[CUT]).toBe(0.6);
-    expect(getParam("track.7.sound.cutoff", getState())).toBe(0.25);
+    expect(getParam("track.5.sound.k4", getState())).toBe(0.25);
     setState({ selStep: 6 });
-    expect(getParam("track.7.sound.cutoff", getState())).toBe(0.6);
+    expect(getParam("track.5.sound.k4", getState())).toBe(0.6);
     setPlockMode(false);
-    expect(getParam("track.7.sound.cutoff", getState())).toBe(0.6);
-    setParam("track.7.sound.cutoff", 0.9, "midi");
+    expect(getParam("track.5.sound.k4", getState())).toBe(0.6);
+    setParam("track.5.sound.k4", 0.9, "midi");
     expect(tp().sound[CUT]).toBe(0.9);
   });
 
@@ -225,7 +224,7 @@ describe("sends and MIDI-mapped knobs", () => {
     const { setParam } = await import("../src/engine/params");
     setPlockMode(true);
     setState({ selStep: 5 });
-    setParam("track.1.sound.tune", 0.9, "midi");
+    setParam("track.1.sound.k1", 0.9, "midi");
     expect(getState().patterns[0].tracks[0].sound[0]).toBe(0.9);
     expect(getState().patterns[0].tracks[0].steps[5].parameterLocks).toBeUndefined();
   });
@@ -239,6 +238,6 @@ describe("sends and MIDI-mapped knobs", () => {
     const off = onParamChange((id, v) => seen.push([id, v]));
     setState({ selStep: 2 });
     off();
-    expect(seen).toContainEqual(["track.7.sound.cutoff", tp().sound[CUT]]);
+    expect(seen).toContainEqual(["track.5.sound.k4", tp().sound[CUT]]);
   });
 });

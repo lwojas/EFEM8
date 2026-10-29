@@ -1,17 +1,17 @@
 // Sound, mixer, FX mangler and pattern panels.
 import { useRef, useState, type CSSProperties } from "react";
 import {
-  clearChain, clearPattern, clearStepLocks, loadKit, loadSynthPreset, removeChainEntry, setDelay, setLevel, setLockable, setPlockMode, setPunchParam,
+  clearChain, clearPattern, clearStepLocks, removeChainEntry, setDelay, setEngine, setLevel, setLockable, setPlockMode, setPunchParam,
   setPunchSend, setReverb, setSoundControl, setSweep, toggleMute, toggleSolo,
 } from "../engine/actions";
 import { controller } from "../engine/controller";
 import { PING_PONG, PING_PONG_NOW_STEPS, punchById, PUNCHES, SWEEPS } from "../engine/mangler";
 import { hasLocks, lockStep, soundParam } from "../engine/plock";
-import { KITS, presetsFor } from "../engine/presets";
+import { ENGINES } from "../engines";
 import { defaultSound, formatControl, TRACKS, unitsToNorm } from "../engine/spec";
 import { BANK_SIZE, defaultLevel, MAX_CHAIN, NUM_PATTERNS } from "../engine/state";
 import { BEAT_DIVISIONS, defaultDelaySend, defaultReverbSend, DELAY_MODES, formatFreeDelay } from "../engine/trackfx";
-import { getState, setState, useStore } from "../engine/store";
+import { getState, setState, useLineup, useStore } from "../engine/store";
 import { Knob, Slider } from "./controls";
 import { Modal } from "./Modal";
 import { ConfirmButton } from "./Sequencer";
@@ -21,6 +21,7 @@ const accentStyle = (track: number): CSSProperties => ({ "--acc": `var(${TRACKS[
 // --- sound -------------------------------------------------------------------------------------
 
 function TrackStrip() {
+  useLineup();
   const focus = useStore((s) => s.focus);
   return (
     <div className="track-strip phone-only" role="tablist" aria-label="Track">
@@ -36,27 +37,15 @@ function TrackStrip() {
   );
 }
 
-function PresetChips({ track }: { track: number }) {
-  const current = useStore((s) => s.patterns[s.pattern].tracks[track].preset);
-  const spec = TRACKS[track];
-  if (spec.role === "drum") {
-    return (
-      <div className="chips" role="group" aria-label="Drum kit">
-        <span className="silk">KIT</span>
-        {KITS.map((k, i) => (
-          <button key={k.name} type="button" className="chip" data-active={current === k.name} onClick={() => loadKit(i)}>
-            {k.name}
-          </button>
-        ))}
-      </div>
-    );
-  }
+/** The engine in the slot: choosing a chip is choosing the instrument (its sound and mix start from the engine's defaults). */
+function EngineChips({ track }: { track: number }) {
+  const current = useStore((s) => s.engines[track]);
   return (
-    <div className="chips" role="group" aria-label="Preset">
-      <span className="silk">PRESET</span>
-      {presetsFor(track).map((p, i) => (
-        <button key={p.name} type="button" className="chip" data-active={current === p.name} onClick={() => loadSynthPreset(track, i)}>
-          {p.name}
+    <div className="chips" role="group" aria-label="Engine">
+      <span className="silk">ENGINE</span>
+      {ENGINES.map((e, i) => (
+        <button key={e.name} type="button" className="chip" data-active={current === i} aria-pressed={current === i} onClick={() => setEngine(track, i)}>
+          {e.name}
         </button>
       ))}
     </div>
@@ -78,6 +67,7 @@ function PlockBar({ track }: { track: number }) {
 }
 
 export function SoundPanel() {
+  useLineup();
   const track = useStore((s) => s.focus);
   const baseSound = useStore((s) => s.patterns[s.pattern].tracks[track].sound);
   // In P-LOCK mode the knobs show the selected step: its locks over the base. Neither is changed by looking.
@@ -100,7 +90,7 @@ export function SoundPanel() {
         <h2>{spec.name}</h2>
         <span className="silk">{spec.engine}</span>
       </header>
-      <PresetChips track={track} />
+      <EngineChips track={track} />
       <div className="knobs" style={{ "--n": spec.controls.length } as CSSProperties}>
         {spec.controls.map((c, i) => (
           <Knob
@@ -143,6 +133,7 @@ export function SoundPanel() {
 // --- mixer ---------------------------------------------------------------------------------------
 
 function MixRow({ track }: { track: number }) {
+  useLineup();
   const spec = TRACKS[track];
   const level = useStore((s) => s.patterns[s.pattern].tracks[track].level);
   const mute = useStore((s) => s.mutes[track]);
@@ -160,6 +151,7 @@ function MixRow({ track }: { track: number }) {
 }
 
 export function MixerPanel() {
+  useLineup();
   return (
     <div className="mixer">
       <header className="panel-title">
@@ -175,6 +167,7 @@ export function MixerPanel() {
 // --- track FX: delay time/mode + reverb size (the sends live in the sound panel) ------------------------------------------------------
 
 export function TrackFxPanel() {
+  useLineup();
   const track = useStore((s) => s.focus);
   const dly = useStore((s) => s.patterns[s.pattern].tracks[track].dly);
   const rev = useStore((s) => s.patterns[s.pattern].tracks[track].rev);

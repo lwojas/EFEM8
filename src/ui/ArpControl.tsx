@@ -4,13 +4,14 @@ import { useRef, useState, type CSSProperties } from "react";
 import { ARP_DIRECTIONS, ARP_MAX_OCTAVES, ARP_RATES } from "../engine/arp";
 import { setArp } from "../engine/actions";
 import { TRACKS } from "../engine/spec";
-import { useStore } from "../engine/store";
+import { useLineup, useStore } from "../engine/store";
 import { Knob } from "./controls";
 import { Modal } from "./Modal";
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 function ArpSettingsForm({ track }: { track: number }) {
+  useLineup();
   const a = useStore((s) => s.arp[track]);
   return (
     <div className="arp-form" style={{ "--acc": `var(${TRACKS[track].accent})` } as CSSProperties}>
@@ -57,6 +58,7 @@ function ArpSettingsForm({ track }: { track: number }) {
 
 /** ARP button + on/off switch for `track`, with the shared settings modal behind the button. */
 export function ArpControl({ track }: { track: number }) {
+  useLineup();
   const on = useStore((s) => s.arp[track].on);
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);

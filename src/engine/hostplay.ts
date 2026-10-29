@@ -8,7 +8,7 @@
 import { hostBeatAt, hostTimeAt, type HostTransport, type Sequence } from "webdsp";
 import type { Groovebox } from "./audio";
 import { baseLayout, cueLayout, nextBoundary, positionAt, steadySequence, transitionSequence, type Layout, type Song } from "./nativeseq";
-import { MELODIC } from "./stepcompile";
+import { ALL_TRACKS } from "./stepcompile";
 import { getState, setState } from "./store";
 import { trackStepAt, type AppState } from "./state";
 
@@ -139,7 +139,7 @@ export class HostPlayback {
       const pos = positionAt(patterns, this.layoutAt(at), at);
       const pat = patterns[pos.pattern];
       const notes: Array<[number, number]> = [];
-      for (const track of MELODIC) {
+      for (const track of ALL_TRACKS) {
         const s = pat.tracks[track].steps[trackStepAt(pat, track, pos.step, pos.run)];
         if (s.on) notes.push([track, s.note]);
       }

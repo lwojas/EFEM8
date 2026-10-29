@@ -3,11 +3,10 @@
 // saved. Project files (export / import) are separate and unchanged.
 import { FILE_EXT, PRODUCT } from "../product";
 import { sanitizeLocks } from "./plock";
-import { BASS_TRACK, defaultSound, NUM_TRACKS, TRACKS } from "./spec";
-import { emptyStep, FX_LANES, MAX_CHAIN, MAX_STEPS, newFxLane, newPattern, NUM_PATTERNS, type AppState, type Pattern } from "./state";
+import { ENGINES, DEFAULT_ENGINES } from "../engines";
+import { KNOBS, NUM_TRACKS, setLineup, TRACKS } from "./spec";
+import { emptyStep, FX_LANES, MAX_CHAIN, MAX_STEPS, newPattern, NUM_PATTERNS, type AppState, type Pattern } from "./state";
 import { normalizeArp, type ArpSettings } from "./arp";
-import { defaultMangler } from "./mangler";
-import { newDelay, newReverb } from "./trackfx";
 import { normalizeScale, type ProjectScale } from "./scale";
 import { CURRENT_STORE, idbRequest, openDb, SAVES_STORE, txDone } from "./db";
 import { getState, observe, setState } from "./store";
@@ -24,10 +23,34 @@ interface Saved {
   bpm: number;
   swing: number;
   pattern: number;
-  /** Absent in saves from before scales existed. */
+  /** The engine in each track slot (indexes into `ENGINES`). The patterns' per-track data (sound, note range) is only
+   * meaningful for these engines, so they are read, and the lineup set, before anything else in a save is. */
+  engines?: number[];
   scale?: ProjectScale;
-  /** Per-track arpeggiator settings; absent in older saves. */
+  /** Per-track arpeggiator settings. */
   arp?: ArpSettings[];
+}
+
+/** A saved lineup, cleaned: one known engine per slot (a missing or unknown entry falls back to the default lineup's). */
+const sanitizeEngines = (x: unknown): number[] =>
+  Array.from({ length: NUM_TRACKS }, (_, i) => {
+    const e = Array.isArray(x) ? x[i] : undefined;
+    return Number.isInteger(e) && ENGINES[e as number] ? (e as number) : DEFAULT_ENGINES[i];
+  });
+
+/** Run `read` with the lineup of a save in force (patterns are built and checked against the engines they were saved with). If it
+ * does not produce a project, the live lineup comes back: it must always mirror `AppState.engines`. */
+function withLineup<T>(saved: unknown, read: (engines: number[]) => T | null): T | null {
+  const live = getState().engines;
+  const engines = sanitizeEngines((saved as Saved | undefined)?.engines);
+  setLineup(engines);
+  let out: T | null = null;
+  try {
+    out = read(engines);
+  } finally {
+    if (!out) setLineup(live);
+  }
+  return out;
 }
 
 function valid(p: unknown): p is Pattern {
@@ -36,69 +59,51 @@ function valid(p: unknown): p is Pattern {
     !!x && Array.isArray(x.tracks) && x.tracks.length === NUM_TRACKS && Array.isArray(x.fxLanes) && x.fxLanes.length === FX_LANES &&
     x.fxLanes.every((l) => Array.isArray(l?.fx) && l.fx.length === MAX_STEPS && Array.isArray(l.fxLvl) && l.fxLvl.length === MAX_STEPS) &&
     typeof x.length === "number" && !!x.mangler &&
-    x.tracks.every((t, i) => Array.isArray(t.steps) && t.steps.length === MAX_STEPS && t.sound?.length === TRACKS[i].controls.length)
+    x.tracks.every((t) => Array.isArray(t.steps) && t.steps.length === MAX_STEPS && t.sound?.length === KNOBS && !!t.dly && !!t.rev && typeof t.punch === "boolean")
   );
 }
 
-/** Older saves: the FX send became separate delay and reverb sends; punches gained per-FX
- * parameters and a recorded sweep level (a written punch used to be simply "on", i.e. full). */
-function migrate(p: Pattern): void {
+/** A pattern's last steps: whole numbers inside the pattern; anything else (or the full length) is "no last step". */
+function tidy(p: Pattern): void {
   if (!p || !Array.isArray(p.tracks)) return;
-  p.tracks.forEach((t, i) => {
-    const old = t as unknown as { send?: number };
-    if (!t.dly) t.dly = { ...newDelay(i), send: typeof old.send === "number" ? old.send : newDelay(i).send };
-    if (!t.rev) t.rev = newReverb(i);
-    if (typeof t.punch !== "boolean") t.punch = true;
-    // last step: whole numbers inside the pattern; anything else (or the full length) is "no last step"
+  for (const t of p.tracks) {
     if (typeof t.last !== "number" || !Number.isFinite(t.last) || t.last < 1 || t.last >= p.length) delete t.last;
     else t.last = Math.floor(t.last);
-    delete old.send;
-  });
-  if (!Array.isArray(p.mangler?.param)) p.mangler = defaultMangler();
-  // The single FX lane became three: an old pattern's lane is the first.
-  const old = p as unknown as { fx?: number[]; fxLvl?: number[] };
-  if (!Array.isArray(p.fxLanes) && Array.isArray(old.fx)) {
-    const lvl = Array.isArray(old.fxLvl) ? old.fxLvl : old.fx.map((id) => (id ? 1 : 0));
-    p.fxLanes = [{ fx: old.fx, fxLvl: lvl }, ...Array.from({ length: FX_LANES - 1 }, newFxLane)];
   }
-  delete old.fx;
-  delete old.fxLvl;
 }
 
-/** Validates and normalises a saved project (any age); null if it is not a usable project. */
-function parseProject(s: Saved): (Saved & { patterns: Pattern[] }) | null {
+/** Validates and normalises a saved project; null if it is not a usable project. */
+function parseProject(s: Saved): (Saved & { patterns: Pattern[]; engines: number[] }) | null {
   if (!s || !Array.isArray(s.patterns) || s.patterns.length < 1 || s.patterns.length > NUM_PATTERNS) return null;
-  // Untouched patterns are saved as null, and saves from before the bank grew to 64 are short.
-  const patterns: Pattern[] = Array.from({ length: NUM_PATTERNS }, (_, i) => s.patterns[i] ?? newPattern());
-  // The bass gained a control (ENV MOD): older saves get its default sound, the rest is kept.
-  for (const p of patterns) {
-    const t = p?.tracks?.[BASS_TRACK];
-    if (t && Array.isArray(t.sound) && t.sound.length !== TRACKS[BASS_TRACK].controls.length) t.sound = defaultSound(TRACKS[BASS_TRACK]);
-  }
-  for (const p of patterns) migrate(p);
-  if (!patterns.every(valid)) return null;
-  // Parameter locks (absent in older saves): keep only known parameters with sane values.
-  for (const p of patterns) {
-    p.tracks.forEach((t, i) => {
-      for (const st of t.steps) {
-        if (!st.parameterLocks) continue;
-        const clean = sanitizeLocks(i, st.parameterLocks);
-        if (clean) st.parameterLocks = clean;
-        else delete st.parameterLocks;
-      }
-    });
-  }
-  return {
-    projectName: typeof s.projectName === "string" ? s.projectName.slice(0, 40) : "",
-    patterns,
-    chain: Array.isArray(s.chain) ? s.chain.filter((n) => n >= 0 && n < NUM_PATTERNS).slice(0, MAX_CHAIN) : [],
-    chainOn: !!s.chainOn,
-    bpm: Number.isFinite(s.bpm) ? s.bpm : 128,
-    swing: Number.isFinite(s.swing) ? s.swing : 0.5,
-    pattern: s.pattern >= 0 && s.pattern < NUM_PATTERNS ? s.pattern : 0,
-    scale: normalizeScale(s.scale),
-    arp: Array.from({ length: NUM_TRACKS }, (_, i) => normalizeArp(Array.isArray(s.arp) ? s.arp[i] : undefined)),
-  };
+  return withLineup(s, (engines) => {
+    // Untouched patterns are saved as null.
+    const patterns: Pattern[] = Array.from({ length: NUM_PATTERNS }, (_, i) => s.patterns[i] ?? newPattern());
+    for (const p of patterns) tidy(p);
+    if (!patterns.every(valid)) return null;
+    // Parameter locks (absent in older saves): keep only known parameters with sane values.
+    for (const p of patterns) {
+      p.tracks.forEach((t, i) => {
+        for (const st of t.steps) {
+          if (!st.parameterLocks) continue;
+          const clean = sanitizeLocks(i, st.parameterLocks);
+          if (clean) st.parameterLocks = clean;
+          else delete st.parameterLocks;
+        }
+      });
+    }
+    return {
+      engines,
+      projectName: typeof s.projectName === "string" ? s.projectName.slice(0, 40) : "",
+      patterns,
+      chain: Array.isArray(s.chain) ? s.chain.filter((n) => n >= 0 && n < NUM_PATTERNS).slice(0, MAX_CHAIN) : [],
+      chainOn: !!s.chainOn,
+      bpm: Number.isFinite(s.bpm) ? s.bpm : 128,
+      swing: Number.isFinite(s.swing) ? s.swing : 0.5,
+      pattern: s.pattern >= 0 && s.pattern < NUM_PATTERNS ? s.pattern : 0,
+      scale: normalizeScale(s.scale),
+      arp: Array.from({ length: NUM_TRACKS }, (_, i) => normalizeArp(Array.isArray(s.arp) ? s.arp[i] : undefined)),
+    };
+  });
 }
 
 /** Files hold JSON, and 64 patterns are ~1.7 MB of it: patterns still equal to a fresh one are written as null. */
@@ -138,7 +143,7 @@ function expandPattern(p: Pattern | null): void {
 
 function snapshot(): Saved {
   const s = getState();
-  return { projectName: s.projectName, patterns: s.patterns, chain: s.chain, chainOn: s.chainOn, bpm: s.bpm, swing: s.swing, pattern: s.pattern, scale: s.scale, arp: s.arp };
+  return { projectName: s.projectName, engines: s.engines, patterns: s.patterns, chain: s.chain, chainOn: s.chainOn, bpm: s.bpm, swing: s.swing, pattern: s.pattern, scale: s.scale, arp: s.arp };
 }
 
 /** Restores the autosave slot into the store. Resolves once done; a missing or damaged slot just
@@ -300,7 +305,7 @@ function importProjectText(text: string, fileName: string): string {
 //  - a snapshot that is not ours or not readable starts fresh instead of wedging startup.
 
 /** The persisted fields, compared by reference: if you add a persisted field, add it here too (and to `snapshot`). */
-const persisted = (s: AppState) => [s.patterns, s.chain, s.chainOn, s.bpm, s.swing, s.projectName, s.scale, s.arp];
+const persisted = (s: AppState) => [s.engines, s.patterns, s.chain, s.chainOn, s.bpm, s.swing, s.projectName, s.scale, s.arp];
 const projectChanged = (next: AppState, prev: AppState) => {
   const a = persisted(next);
   const b = persisted(prev);
@@ -325,8 +330,11 @@ export function fromHostSnapshot(snap: HostStateSnapshot): (Saved & { patterns: 
   if (snap.app !== HOST_APP || !HOST_FORMATS_READ.includes(snap.format)) return null;
   try {
     const data = JSON.parse(snap.data) as { project?: Saved };
-    data?.project?.patterns?.forEach(expandPattern);
-    return parseProject(data?.project as Saved);
+    // the dropped blank steps are rebuilt for the engines the snapshot was saved with
+    return withLineup(data?.project, () => {
+      data?.project?.patterns?.forEach(expandPattern);
+      return parseProject(data?.project as Saved);
+    });
   } catch {
     return null;
   }

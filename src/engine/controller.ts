@@ -8,7 +8,7 @@ import { laneLayers, layeredTarget, sweepLevel, VERB_ID, VERB_TAIL, type PunchLa
 import { editPattern, getState, observe, setState } from "./store";
 import { TRACKS } from "./spec";
 import { MAX_CHAIN, pickWriteLane, trackStepAt, type Pattern } from "./state";
-import { MELODIC, StepCompiler, type StepNote } from "./stepcompile";
+import { ALL_TRACKS, StepCompiler, type StepNote } from "./stepcompile";
 import { clearLit, flashKey, setLit } from "./keyhl";
 import { setAudible } from "./playhead";
 import { gateForHeld, recordStep } from "./record";
@@ -473,6 +473,14 @@ class Controller {
 
   private onState(next: ReturnType<typeof getState>, prev: ReturnType<typeof getState>): void {
     if (!this.gb) return;
+    // an engine changed: the slot gets a new instrument before anything below sends it sound
+    if (next.engines !== prev.engines) {
+      next.engines.forEach((e, t) => {
+        if (e === prev.engines[t]) return;
+        this.gb!.setEngine(t);
+        this.compiler.forget(t);
+      });
+    }
     if (
       next.patterns !== prev.patterns || next.mutes !== prev.mutes || next.solos !== prev.solos ||
       next.pattern !== prev.pattern
@@ -655,7 +663,7 @@ class Controller {
 
   /** Light the keys of the notes now sounding; melodic tracks with no note on this step go dark. */
   private lightKeys(ev: StepEvent): void {
-    for (const track of MELODIC) setLit(track, ev.notes.filter(([t]) => t === track).map(([, n]) => n));
+    for (const track of ALL_TRACKS) setLit(track, ev.notes.filter(([t]) => t === track).map(([, n]) => n));
   }
 
   /** Move the store's playhead to what is audible now; record/erase FX as steps pass. */
