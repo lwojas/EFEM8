@@ -36,10 +36,10 @@ musically, and [webdsp](https://github.com/lwojas/webdsp) for sound. The one rul
 
 - **One source of truth.** `AppState` is the project plus the performance state. There is no second copy in a
   component, in the audio layer, or in MIDI.
-- **Pure where it can be.** `state.ts`, `spec.ts`, `mangler.ts`, `arp.ts`, `scale.ts`, `trackfx.ts`, `presets.ts`,
+- **Pure where it can be.** `state.ts`, `spec.ts`, `engines.ts`, `plock.ts`, `lfo.ts`, `mangler.ts`, `arp.ts`, `scale.ts`, `trackfx.ts`,
   `song.ts` and `midi/clock.ts` import neither React nor webdsp's runtime. They are unit-tested directly.
 - **One audio module.** `audio.ts` is the only file that calls webdsp's `AudioRuntime`. Retargeting the sound engine
-  means changing that file and the parameter ids in `spec.ts`.
+  means changing that file and the engine tables in `engines.ts`.
 - **One MIDI contract.** CC numbers exist in `midi/mapping.ts` and nowhere else.
 
 ## Module map
@@ -49,12 +49,14 @@ musically, and [webdsp](https://github.com/lwojas/webdsp) for sound. The one rul
 | File | Responsibility |
 |---|---|
 | `../product.ts` | Product identity: name, logo, and the `id` that prefixes every storage key and file stamp. Start a clone here (see [REFERENCE_RESKIN.md](../../REFERENCE_RESKIN.md)). |
-| `spec.ts` | **The track definitions.** Which webdsp instrument backs each role, which parameters are exposed as macro controls, over what range and taper. Normalised ↔ engine-unit conversion and readout formatting. Note naming. |
+| `../engines.ts` | **The engine palette.** Eight FM engines (KICK, SNARE, HAT, TOM, BASS, PLUCK, BELL, LEAD): the webdsp instrument behind each, its five macro knobs and their ranges, pinned parameters, gain trim, starting mix and note range. `DEFAULT_ENGINES` is the lineup a new project starts with. With `product.ts`, one of the two files a new groovebox replaces. |
+| `spec.ts` | Resolves the lineup into `TRACKS` (the engine in each slot, as the app reads it; `setLineup` keeps it in step with `AppState.engines`). Normalised ↔ engine-unit conversion, readout formatting, note naming. |
 | `state.ts` | `AppState`, `Pattern`, `TrackPattern` (with its optional `last` step, `trackLast` / `trackStepAt`), `Step`; constructors; the demo groove; the pure pattern edits (`randomizeTrack`, `clearTrackSteps`). |
 | `store.ts` | The store. `setState`, `observe`, `editPattern`, the `useStore` hook. |
 | `actions.ts` | User-level edits. UI components and `params.ts` call these. They edit the store and audition. |
 | `stepcompile.ts`, `nativeseq.ts`, `hostplay.ts` | One step's notes, shared by the live scheduler and the native sequence; the song as a webdsp `Sequence` for a plugin host; following the DAW's transport. See [VST3 build](vst.md). |
 | `plock.ts` | Parameter locks: per-step overrides of a track's sound controls and sends (`Step.parameterLocks`), resolved against the pattern's base values. Pure. |
+| `lfo.ts` | Per-track LFOs: three per track, each pointed at any lockable parameter (`Groovebox.applyLfos` applies them every tick). Pure. |
 | `record.ts` | Realtime note recording: pure helpers that map a key press to the nearest step (`recordStep`) and a held time to a gate (`gateForHeld`). |
 | `controller.ts` | The groovebox controller: transport, the lookahead scheduler, pattern switching and chaining, the punch-in and write logic, the arpeggiator hosts. Owns the `Groovebox`. |
 | `audio.ts` | `Groovebox`: builds and drives the webdsp graph. Mixer, sends, the punch bus, scheduled parameter ramps. |
@@ -62,7 +64,6 @@ musically, and [webdsp](https://github.com/lwojas/webdsp) for sound. The one rul
 | `trackfx.ts` | Per-track delay and reverb send models and their mappings. |
 | `arp.ts` | The arpeggiator. Instrument-agnostic. Notes in, timed events out. |
 | `scale.ts` | Keys, scales, genre presets. |
-| `presets.ts` | Factory kits and synth presets, authored in readable engine units. |
 | `persist.ts`, `db.ts` | Autosave, named saves, export/import, migrations. `db.ts` is the only IndexedDB code. |
 | `params.ts` | The registry of externally controllable parameters, by stable id, with change notification. |
 | `source.ts` | The ambient *origin* tag for a change (`ui`, `midi`, `host`, `automation`, `internal`). |
@@ -82,7 +83,7 @@ musically, and [webdsp](https://github.com/lwojas/webdsp) for sound. The one rul
 
 ### `src/ui/`
 
-`Header`, `Sequencer`, `Panels`, `ProjectMenu`, `ArpControl`, `Modal`, `controls` (Knob, Slider, press handling),
+`Header`, `Sequencer`, `Panels`, `ProjectMenu`, `ArpControl`, `LfoModal`, `Modal`, `controls` (Knob, Slider, press handling),
 plus small hooks. `src/index.css` is the whole stylesheet.
 
 ## Data flow, by example
@@ -92,7 +93,7 @@ plus small hooks. `src/index.css` is the whole stylesheet.
 dirty; `params` notifies MIDI output. React re-renders only the components whose selector result changed.
 
 **A MIDI CC.** `ports.ts` → `setup.ts` → `control.ts` converts 0–127 to the parameter's domain and calls
-`setParam("track.7.sound.cutoff", v, "midi")` → `withSource("midi", …)` → the same action the knob uses → the
+`setParam("track.7.sound.k2", v, "midi")` → `withSource("midi", …)` → the same action the knob uses → the
 store. The origin tag lets MIDI output skip echoing it back.
 
 **A step plays.** The worker tick → `controller.tick()` schedules audio ~120 ms ahead → later, when that step becomes
@@ -101,8 +102,9 @@ See [Timing & scheduling](timing.md).
 
 ## Design principles in the code
 
-- **Controls are stored normalised (0..1).** Ranges are tuned in `spec.ts`; saved patterns survive retuning.
+- **Controls are stored normalised (0..1).** Ranges are tuned in `engines.ts`; saved patterns survive retuning.
 - **Ranges are narrower than the engine's, on purpose.** The whole knob travel should sound good.
+- **The lineup belongs to the project, the sound to the pattern.** Which engine is in each slot is `AppState.engines`; what its knobs are set to is `TrackPattern.sound`. Choosing a new engine (`setEngine`) resets the slot in every pattern.
 - **Sound belongs to the pattern.** Pattern switching is a state change the audio layer applies at the loop boundary.
 - **Performance state is not saved.** Mute, solo, arming and the visible screen are not in `Saved`.
 - **Caches everywhere on the audio side.** `Groovebox` remembers the last value it sent for every parameter and sends
@@ -113,8 +115,16 @@ See [Timing & scheduling](timing.md).
 The visual language lives in `concept/styleguide/` (`DESIGN.md` tokens and a reference mock-up). `src/index.css` implements
 it: dark surfaces, three accent colours (`--drum`, `--bass`, `--tone`) and `--fx`, tabular mono readouts.
 
-Layout is CSS-only, by media query: phone (tabs, below 1100 px wide) and desktop (one page, 1100 px and up, with narrower
-overrides below 1300 and 1500 px). Desktop also has a short-window block (`min-width: 1100px` and `max-height: 820px`, with a
-tighter step at 680 px): the band is the tallest fixed-height row, so it is compacted there to keep the sequencer keyboard on
-screen. A DAW's default plugin window is about 1100×700, so check that size (and 1100×640) after any change to the band
-panels. Heights come from the `--cell-h`/`--keys-h` tokens at the top of the file.
+Layout is CSS-only, by media query, with one JavaScript exception: components read the phone query (`PHONE` in `useMedia.ts`)
+to choose shorter labels (CLR, ACC, SLD):
+
+| Query | Layout |
+|---|---|
+| `max-width: 699px` | **Phone**: five tabs; short labels |
+| `700px` and up, below `1100px` | **Tablet**: the same tabs with more room |
+| `min-width: 1100px` | **Desktop**: one page; transport and patterns on top, instrument band, sequencer with a slim mixer beside it. Narrower overrides below 1300 and 1500 px wide |
+| `min-width: 1100px` and `max-height: 820px` | **Short window**: the band is the tallest fixed-height row, so it is compacted (sends move to a strip under the knobs) to keep the sequencer keyboard on screen. A tighter step applies at 760 and 680 px high |
+
+A DAW's default plugin window is about 1100×700, so check that size (and 1100×640) after any change to the band panels. Heights
+come from the `--cell-h`/`--keys-h` tokens at the top of the stylesheet. Panels are separated by thin lines rather than boxes, and
+the distortion/filter sliders are pill-shaped so they read apart from the square buttons.

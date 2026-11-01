@@ -103,7 +103,7 @@ describe("track filter: graph", () => {
 });
 
 describe("track filter: parameters", () => {
-  it("is addressable by id and follows P-LOCK mode like the knobs", () => {
+  it("is addressable by id and follows TWEAK mode like the knobs", () => {
     setParam("track.5.filterMode", 1, "midi");
     setParam("track.5.filterCut", 0.4, "midi");
     setParam("track.5.filterRes", 0.7, "midi");

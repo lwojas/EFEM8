@@ -3,9 +3,8 @@
 Recipes for the changes people actually make. Each lists every file you touch and the tests that will tell you if you
 missed one. Run `npm test` and `npm run build` (which type-checks) after each.
 
-- [Add a macro knob to a track](#add-a-macro-knob-to-a-track)
-- [Add a track](#add-a-track)
-- [Add a factory kit or preset](#add-a-factory-kit-or-preset)
+- [Add or change a knob on an engine](#add-or-change-a-knob-on-an-engine)
+- [Add an engine](#add-an-engine)
 - [Add a Punch FX](#add-a-punch-fx)
 - [Add a scale or genre preset](#add-a-scale-or-genre-preset)
 - [Add an arpeggiator rate or direction](#add-an-arpeggiator-rate-or-direction)
@@ -13,74 +12,43 @@ missed one. Run `npm test` and `npm run build` (which type-checks) after each.
 - [Change the MIDI map](#change-the-midi-map)
 - [Persist a new piece of project state](#persist-a-new-piece-of-project-state)
 - [Add an action and a control](#add-an-action-and-a-control)
+- [Add a lockable parameter (and LFO target)](#add-a-lockable-parameter-and-lfo-target)
 
 ---
 
-## Add a macro knob to a track
+## Add or change a knob on an engine
 
-A knob is a `ControlSpec` in `engine/spec.ts`.
+A knob is a `ControlSpec` in the engine's `controls` in `engines.ts`, written with the `knobs(...)` helper so its key is positional
+(`k1`..`k5`).
 
 ```ts
-exp("cutoff", "FILTER", BassParam.Cutoff, 60, 2500, 250, "Hz"),   // exponential taper
-lin("envmod", "ENV MOD", BassParam.EnvMod, 0, 1, 0.6),             // linear, shown as %
+exp("DECAY", DmThumpParam.Decay, 0.15, 1.2, 0.45, "s"),   // exponential taper
+lin("PUNCH", DmThumpParam.Punch, 0, 1, 0.55),             // linear, shown as %
 ```
 
-1. **`spec.ts`** — add `lin(...)` or `exp(...)` to the track's `controls`. Choose a *narrow* range: the whole travel
-   should be musical. A stepped control uses the object form with `steps: [...]`.
-2. **Persisted data.** Saved `sound` arrays are indexed by control position. Adding a control **changes the length**,
-   which `valid()` rejects. Add a fix-up in `persist.ts → parseProject` that gives affected tracks their default sound
-   (the ENV MOD fix-up is the model). **Append new controls last** wherever possible.
-3. **`presets.ts`** — unspecified controls fall back to their default, so existing presets still work. Set the new value
-   in the presets where it matters.
-4. **`midi/mapping.ts`** — add the key to `SOUND_KEYS` for that track. The CC is assigned by position
-   (70–75), or by name in `SOUND_BY_KEY`. A track is limited to six knobs.
-5. UI: nothing. Panels render from `spec.controls`.
+1. **`engines.ts`**: change the row. Choose a *narrow* range: the whole travel should be musical. A stepped control uses the object
+   form with `steps: [...]` (the BASS's COLOR is the model). Every engine has exactly `KNOBS` (5) knobs, because the sound panel, the
+   MIDI map and the parameter ids are the same shape whatever is in a slot.
+2. **Saved data.** Saved `sound` arrays are indexed by position, so changing a knob's *meaning* in the middle of an engine changes what
+   old projects mean. Keep the order, or add a migration in `persist.ts`.
+3. **`midi/mapping.ts` and `params.ts`**: nothing; both address knobs by position (`track.N.sound.k1`..`k5`, CC 70, 72, 73, 75, 76).
+4. UI: nothing. Panels render from the engine's `controls`.
 
-Tests: `engine.test.ts` ("keeps every default and preset inside its range") and `midi.test.ts` ("maps every sound knob of
-every track") fail if you miss steps 1, 3 or 4. A third test caps a track at **5 macro knobs (6 for the bass)**: that is a
-design guard for the macro surface, so raise it deliberately, not to make a test pass.
+Tests: `engine.test.ts` (defaults inside range, five knobs per engine) and `midi.test.ts` (every knob of every track is mapped).
 
 ---
 
-## Add a track
+## Add an engine
 
-Tracks are rows in `TRACKS`; the rest of the app iterates it. This is the largest change, because the saved shape is
-indexed by track.
+An engine is a row of `ENGINES` in `engines.ts`: a `name` and `short`, a one-line `engine` description, a `role` (`drum` gets pads and
+a choke group, `bass` and `tone` get a piano roll and the arpeggiator), the webdsp `kind`, five `controls`, the `fixed` parameters
+pinned behind them, a `gainDb` trim, a starting `mix` (level and sends) and, for melodic engines, `rootMidi`, `noteLo`, `noteHi` and
+`defaultNote`. Append it **last**: a saved lineup stores an index into `ENGINES`, so reordering changes what old projects load.
+Everything else (the engine chips, the track's accent, the audio graph, step compile, locks, MIDI) follows from the row. A new
+`InstrumentKind` may also need a case where the audio layer builds instruments.
 
-1. **`spec.ts`** — add the `TrackSpec`: `id` (must equal its index), `name`, `short`, `engine` description, `role`
-   (`drum | bass | tone`), the webdsp `kind`, `accent`, `controls`, `fixed` parameters, `gainDb`, and for melodic tracks
-   `rootMidi`, `noteLo`, `noteHi`, `defaultNote`. Optionally a `chokeGroup`.
-2. **Per-track defaults** are the `mix` field on the same `TrackSpec` (`level`, `delay`, `reverb`); there are no
-   parallel arrays to extend.
-3. **`presets.ts`** — a drum track needs an entry in every `Kit.drums` array (kits index by drum track id). A synth
-   needs a preset list and a case in `presetsFor`.
-4. **`state.ts`** — `randomizeTrack` has a density table for drums; give the new one a row. Add it to `demoPattern` if
-   you want it to sound at first start.
-5. **`midi/mapping.ts`** — a row in `SOUND_KEYS` (track count and melodic tracks come from `TRACKS`).
-6. **Persistence.** `valid()` requires `tracks.length === NUM_TRACKS`, so every existing project would be rejected.
-   Write a migration that appends a fresh track to older patterns and add a test with an old-shaped project.
-7. **Keyboard shortcuts** `1`–`9` follow `NUM_TRACKS` (`App.tsx`); there is no key for a tenth track.
-8. **Audio** — `audio.ts` builds buses and an instrument per `TRACKS` entry automatically. Check the voice limit
-   (`maxVoices` in `Groovebox.create`).
-
-`BASS_TRACK` and `TONE_TRACK` in `spec.ts` are named constants used by the demo, presets and randomiser; they are not
-part of the iteration.
-
----
-
-## Add a factory kit or preset
-
-All in `presets.ts`, in readable units:
-
-```ts
-{ name: "ELECTRO", drums: [
-  { tune: 52, sweep: 2.0, decay: 0.35, punch: 0.6, drive: 0.4 },   // kick
-  ...
-]}
-```
-
-A kit gives one object per drum track id (0–5); a synth preset gives one object of control keys. Missing keys use
-defaults. The test "keeps every default and preset inside its sweet-spot range" checks the values.
+The default lineup is `DEFAULT_ENGINES` (an index per slot). `setEngine` (`actions.ts`) is the one place a slot changes engine: it resets
+the slot in every pattern and keeps the rhythm.
 
 ---
 
@@ -167,7 +135,7 @@ Edit `midi/mapping.ts`. It is data, and the engine validates it.
 
 ```ts
 parameters["track.1.volume"] = { cc: 7, channel: 1 };
-parameters["track.7.sound.cutoff"] = { cc: 74, channel: 7, invert: false };
+parameters["track.7.sound.k1"] = { cc: 70, channel: 7 };   // knob 1 of whatever engine is on track 7
 ```
 
 Pattern selection is not a CC; it is the `program` entry (Bank Select + Program Change). A mapping entry is
@@ -201,3 +169,20 @@ If it is performance state (not part of the music), do not persist it; put it in
 5. If the change must reach the audio engine, you normally need nothing: the controller observes `patterns`, `mutes`,
    `solos` and `pattern`, and `applySound`/`applyMix` push what changed. New *kinds* of audio parameter belong in
    `audio.ts`.
+
+---
+
+## Add a lockable parameter (and LFO target)
+
+A *lockable* parameter is one a step can override (TWEAK) and an LFO can move. The list is `LOCKS` in `engine/plock.ts`.
+
+1. **`plock.ts`**: add a `LockParam` with a **permanent** `id` (it is the key in `Step.parameterLocks` and in `Lfo.target`, so it
+   is saved), a `label`, a `target` and a `base(tp)` that reads the pattern's value.
+2. **`audio.ts → lockWrites`**: add the branch that turns the value into engine writes. Use the **same keys** as the mixer or sound
+   writes use for that parameter, so a lock, an LFO and the base share caches.
+3. **`actions.ts → setLockable`** and **`params.ts`**: route the on-screen control and the parameter through `setLockable` so TWEAK
+   mode edits the step's lock instead of the base.
+4. **LFO list**: `useTargets` in `ui/LfoModal.tsx` decides which lock ids the menu offers for a track.
+5. `sanitizeLocks` and `sanitizeLfos` keep only known ids, so a renamed id is lost from old saves.
+
+Tests: `plock.test.ts`.

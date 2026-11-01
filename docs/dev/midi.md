@@ -10,7 +10,7 @@ The player's view (which CC does what, how to switch it on) is in the [MIDI guid
  midi/ports.ts   Web MIDI ports      midi/setup.ts   the only MIDI file that imports the app
 ```
 
-- **Parameters** (`engine/params.ts`): stable ids (`track.1.volume`, `track.8.sound.color`, `pattern.select`) over the
+- **Parameters** (`engine/params.ts`): stable ids (`track.1.volume`, `track.8.sound.k3`, `pattern.select`) over the
   existing store. Each reads AppState and writes through the same actions the UI calls. No second state.
 - **Origin** (`engine/source.ts`): `ui | midi | host | automation | internal`, ambient for one synchronous store write.
   `setParam(id, v, source)` tags the write; the store observer reports every changed parameter with that origin.
@@ -23,18 +23,20 @@ conversion is in `midi/control.ts` only. webtracker stores 0-15 in its model and
 is the one that speaks 1-16. A parameter without `channel` inherits `defaultChannel`.
 
 ## Initial map
-One channel per track (1 KICK … 8 FM), same CCs on each:
+One channel per track (track 1 → channel 1 … track 8 → channel 8), same CCs on each:
 
 | CC | Parameter | CC | Parameter |
 |---|---|---|---|
 | 7 | volume | 20 | mute (0-63 off, 64-127 on; out 0/127) |
 | 12 | delay send | 21 | solo |
-| 91 | reverb send | 22 | arpeggiator (ACID, FM) |
-| 70-75 | the track's knobs in app order | 74 / 71 | ACID filter / resonance (70 env mod, 72 decay, 73 bite, 75 wave) |
+| 91 | reverb send | 22 | arpeggiator (melodic engines) |
+| 74 / 71 | filter cutoff / resonance | 78 | filter mode (0-63 LP, 64-127 HP) |
+| 70 72 73 75 76 | sound knobs 1-5 | | |
 
-Stepped knobs (FM COLOR) split 0-127 into equal bands. CC 10 is unassigned: the app has no pan.
+Knobs are addressed by position (`track.N.sound.k1`..`k5`), because any engine can be in any slot: what a knob does follows the engine.
+Stepped knobs (the BASS's COLOR) split 0-127 into equal bands. CC 10 is unassigned: the app has no pan.
 Patterns: **Bank Select (CC 0) + Program Change** on the default channel, 4 banks x 16 = 64 patterns. While playing the pattern
-is cued for the next loop (as tapping a slot does). Volume, sends and knobs edit the pattern on screen, as the UI does. Sends and knobs are lockable (`engine/plock.ts`): in P-LOCK mode, with a step selected on the focused track, they read and write that step's parameter lock instead of the base, and a selection change is reported as a value change.
+is cued for the next loop (as tapping a slot does). Volume, sends and knobs edit the pattern on screen, as the UI does. Sends and knobs are lockable (`engine/plock.ts`): in TWEAK mode, with a step selected on the focused track, they read and write that step's parameter lock instead of the base, and a selection change is reported as a value change.
 
 ## Keyboard (MIDI settings: KEYBOARD, KEY OCTAVE)
 `midi/setup.ts` only. Ports listen to every input and tag each message with its port id; `setup.ts` filters: control (CC, program,
