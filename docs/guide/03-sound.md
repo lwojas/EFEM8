@@ -99,7 +99,7 @@ A punchy two-part FM bass for low lines.
 |---|---|
 | **COLOR** | Eight steps that change the character: `SUB`, `FULL`, `HOLLOW`, `THIRDS`, `THIN`, `FIFTHS`, `METAL`, `BELL` |
 | **MOD** | How rich the sound is, from a pure tone to a bright one: 5 – 90% (35%) |
-| **BITE** | An extra burst of brightness at the start of each note, and how much an accent changes the tone (60%) |
+| **BITE** | An extra burst of brightness at the start of each note (60%) |
 | **TONE** | How dark or bright it is: 15 – 100% (70%) |
 | **DECAY** | 60 ms – 1.1 s (300 ms) |
 

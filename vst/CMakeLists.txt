@@ -41,7 +41,7 @@ juce_add_binary_data(WebVstData SOURCES "${FM8_WEBVST_DIR}/src/shim.js")
 # The page this plugin opens. Default: the hosted app (GitHub Pages, deployed from main), like webvst's own plugins. For development point
 # it at a dev server (`npm run dev` / `npm run vst:serve`, port 5175) with WEBVST_URL_FM8 (or WEBVST_URL) in the DAW's environment, or
 # rebuild with -DFM8_DEFAULT_URL=http://localhost:5175/ . (A cached value in an existing build directory wins over this default.)
-set(FM8_DEFAULT_URL "https://lwojas.github.io/FM8/" CACHE STRING "URL the plugin editor loads by default")
+set(FM8_DEFAULT_URL "https://lwojas.github.io/EFEM8/" CACHE STRING "URL the plugin editor loads by default")
 
 juce_add_plugin(FM8
   PRODUCT_NAME "FM8"

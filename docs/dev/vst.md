@@ -33,7 +33,7 @@ cp -R vst/build/FM8_artefacts/VST3/FM8.vst3 ~/Library/Audio/Plug-Ins/VST3/
 
 ## Serving the page
 
-The plugin loads FM.8 from a URL, by default the hosted app, <https://lwojas.github.io/FM8/> (deployed by the GitHub
+The plugin loads FM.8 from a URL, by default the hosted app, <https://lwojas.github.io/EFEM8/> (deployed by the GitHub
 workflow on every push to `main`). The plugin therefore needs network access, and runs whatever is deployed: native playback needs the
 deployed page to be at least the commit that added it. To develop against local code, start a server and point the plugin at it:
 

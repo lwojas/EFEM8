@@ -38,8 +38,7 @@ Every step on these tracks holds a note, and can also be an accent or a slide.
 With a step selected, play the on-screen keys to choose its note. The editor beside the pads shows the step number and
 two switches:
 
-- **ACCENT**: a harder note. On the BASS, an accent is also brighter and snappier, depending on the **BITE** knob.
-  That's the classic acid sound.
+- **ACCENT**: a harder note.
 - **SLIDE**: glides into this note from the note on the step before it, without hitting it again. The previous step has
   to have a note for the slide to work; on its own, a slide just sounds like a normal note.
 
