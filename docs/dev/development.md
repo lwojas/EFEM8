@@ -38,18 +38,20 @@ the module and break that lookup. `server.fs.allow: [".."]` lets the dev server 
 
 ## Tests
 
-`test/engine.test.ts`, `test/midi.test.ts`, `test/hoststate.test.ts` and `test/nativeseq.test.ts`, Vitest, Node environment, no audio, no DOM. They cover the pure logic:
+Ten files under `test/`, Vitest, Node environment, no audio, no DOM (188 tests). They cover the pure logic:
 
-| Area | Examples |
+| File | Covers |
 |---|---|
-| Control mapping | normalised ↔ units round trip; defaults and presets inside range |
-| Punch FX | transparent at rest, takeover rules, sweep level maths |
-| Sends | per-track independence; delay taper and divisions |
-| Patterns | randomiser stays in range and in scale |
-| Scales | membership, presets, normalising bad input |
-| Arpeggiator | direction order, grid timing, triplet drift, sanitising |
-| MIDI | mapping validation, value conversion both ways, channels, echo suppression, banks, clock follower, song position |
-| Plugin host | host-state save/restore; the song compiled to a native sequence |
+| `engine.test.ts` | Control maths (normalised ↔ units, defaults inside range), Punch FX (transparent at rest, takeover and glitch rules, sweep level), sends, the randomiser (in range, in scale), scales, the arpeggiator |
+| `engines.test.ts` | The engine palette: every engine's five knobs, ranges, pinned parameters and note range; changing a track's engine; the lineup in saved state |
+| `filter.test.ts` | The per-track filter: mapping, open-by-default, lock and MIDI ids |
+| `plock.test.ts` | Parameter locks: resolution over the base, sanitising, the scheduled writes, sends and MIDI-mapped knobs in TWEAK mode |
+| `laststep.test.ts` | Per-track last step: polymeter loops, swing, arps, locks, chains |
+| `record.test.ts` | Nearest-step and gate maths for note recording |
+| `midi.test.ts` | Mapping validation, value conversion both ways, channels, echo suppression, banks, the clock follower, song position |
+| `hoststate.test.ts` | Host-state save/restore and the compacted snapshot |
+| `nativeseq.test.ts` | The song compiled to a native sequence |
+| `product.test.ts` | The identifiers saved on users' machines stay stable |
 
 What is **not** tested automatically: the sound itself, the scheduler against a real audio clock, and the React
 components. Check those by ear and by eye (`npm run dev`), at phone width and wide.
@@ -92,14 +94,14 @@ A failing test or type error stops the deploy. The `--base` is the repository na
   (a few ms of jitter, inaudible at 16th-note resolution). Effect and instrument changes at pattern boundaries are
   sample-accurate. A webdsp "schedulable bus params" feature would remove the ticker.
 - FX writes are one punch per step per lane (step-quantised), three lanes per pattern.
-- Sound constants and presets are a first pass, set by measurement rather than by ear. Expect them to be tuned.
-- MIDI input is control only (CC, program change, clock). There is no MIDI note input or output.
+- Sound constants are a first pass, set by measurement rather than by ear. Expect them to be tuned.
+- MIDI input is control (CC, program change, clock) plus an optional keyboard device that plays the selected track. There is no MIDI output of notes or clock.
 - LFOs are written once per tick (control rate) and do not play in the plugin's native sequence.
 - Web MIDI availability depends on the browser.
 
 ## Related documents
 
 - [Architecture](architecture.md) · [Audio graph](audio-graph.md) · [Timing](timing.md) · [State](state-and-persistence.md)
-  · [Extending](extending.md) · [MIDI](midi.md)
+  · [Extending](extending.md) · [MIDI](midi.md) · [VST3 build](vst.md)
 - `concept/styleguide/` — the visual design tokens and reference mock-up.
 - webdsp's own `ARCHITECTURE.md` and `docs/` — the engine FM.8 is built on.

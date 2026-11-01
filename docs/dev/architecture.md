@@ -83,8 +83,10 @@ musically, and [webdsp](https://github.com/lwojas/webdsp) for sound. The one rul
 
 ### `src/ui/`
 
-`Header`, `Sequencer`, `Panels`, `ProjectMenu`, `ArpControl`, `LfoModal`, `Modal`, `controls` (Knob, Slider, press handling),
-plus small hooks. `src/index.css` is the whole stylesheet.
+`Header` (transport, REC, BPM, pattern readout, save/load), `Sequencer` (step pads, keyboards, FX lanes, the track strip),
+`Panels` (sound, mixer, track FX, Punch FX, pattern bank), `ProjectMenu` (key and scale, display, project file, MIDI),
+`ArpControl`, `LfoModal`, `Modal`, `controls` (Knob, Slider, Stepper, press handling), `useMedia` (the phone query),
+`usePlayhead`. `src/index.css` is the whole stylesheet. `src/App.tsx` composes the layouts and `src/main.tsx` boots them.
 
 ## Data flow, by example
 

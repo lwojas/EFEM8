@@ -2,7 +2,7 @@
 
 **An FM groovebox for the browser.** Eight track slots, and each plays one of eight curated FM engines: kick, snare,
 hat, tom, bass, pluck, bell and lead. Choose the instrument for a slot, turn five knobs, sequence it. Nine performance
-effects (six processors and three glitches: repeat, tape stop, gate) you play by hand and record, and 64 patterns that chain into songs. It opens in one tap, runs on a phone as well
+effects (six sound effects and three stutters: beat repeat, tape stop, gate) you play by hand and record, and 64 patterns that chain into songs. It opens in one tap, runs on a phone as well
 as a desktop, and keeps everything you make.
 
 FM.8 is the second instrument in a family of compact grooveboxes that share one shell (see
@@ -17,7 +17,7 @@ the range comes from the breadth of FM itself, with no subtractive synth.
 - **A sequencer that gets out of the way.** 16 to 64 steps per pattern, tap to place, ACCENT button, swing, a scale-aware
   keyboard, and an arpeggiator on the melodic engines. A slot's pads or piano roll follow its engine.
 - **Punch FX.** Hold a pad and the effect sweeps in: drive, crush, phaser, flanger, dub echo and filter sweep, plus three
-  glitches (beat repeat, tape stop, gate). Arm **REC FX** and the move, with its exact sweep shape, is recorded into the pattern and replayed on the audio clock.
+  stutters (beat repeat, tape stop, gate). Arm **REC FX** and the move, exactly as you played it, is recorded into the pattern and plays back in time with the beat.
 - **Proper mixing.** Level, mute and solo per track, plus an independent delay and reverb per track. Delay locks to the
   tempo or runs free.
 - **64 patterns, cueing and chains.** Switch patterns on the bar; the sound of the whole groove can change with them.
@@ -25,12 +25,12 @@ the range comes from the breadth of FM itself, with no subtractive synth.
 - **Everything is saved.** Autosave, named saves, and export/import as a file.
 - **MIDI.** Control every fader and knob from a controller or DAW, with feedback to motorised faders. Bank/program
   change picks patterns. Follow an external MIDI clock.
-- **Mobile first.** Five tabs on a phone. On a wide screen the whole instrument is on one page.
+- **Made for phones too.** Five tabs on a phone. On a wide screen the whole instrument is on one page.
 
 ## Start
 
 1. Open FM.8 and **tap START**. A demo groove is already playing.
-2. Mute a track, pick a different **ENGINE** for it (try **BELL** in the kick's slot), turn its knobs, hold **FILTER** on the punch pads.
+2. Mute a track, pick a different **ENGINE** for it (try **BELL** in the kick's slot), turn its knobs, hold **SWEEP** on the punch pads.
 3. Press **REC FX**, hold a pad through a loop, and listen to your move come back round.
 
 The [User Guide](docs/guide/01-getting-started.md) takes it from there.
@@ -70,7 +70,7 @@ plugin loads the hosted app (or a dev server, see the doc). In the DAW it follow
 | Tracks | 8 slots, each one of 8 FM engines (KICK SNARE HAT TOM BASS PLUCK BELL LEAD) |
 | Patterns | 64, each 16 / 32 / 48 / 64 steps |
 | Tempo | 60 – 200 BPM, swing 50 – 75% |
-| Punch FX | 9, sweepable, writable |
+| Punch FX | 9, played by hand and recordable |
 | Track FX | Delay (free or tempo-synced) and reverb on every track |
 | Storage | Autosave and named saves in the browser; export/import as `.fm8.json` |
 | Control | MIDI CC, bank/program change, clock follow |
@@ -79,6 +79,6 @@ plugin loads the hosted app (or a dev server, see the doc). In the DAW it follow
 ## Under the hood
 
 The engine is plain TypeScript with no knowledge of the interface, and the interface has no knowledge of the audio. A
-Web Worker clock drives a lookahead scheduler that hands notes to the audio thread with sample-accurate times; the
+Web Worker clock drives a lookahead scheduler that hands notes to the audio thread with exact times; the
 playhead is drawn directly to the DOM so the UI can never get in the way of the groove. See the
 [architecture](docs/dev/architecture.md).

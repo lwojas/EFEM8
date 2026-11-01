@@ -1,35 +1,40 @@
 # Punch FX
 
-Punch FX are what make FM.8 fun to perform with. There are nine effects (six processors and three glitches), all sharing one effects section. Hold a pad and the effect **fades in** while you hold it; let go and it fades back out. Press **REC FX** and your move is recorded
+Punch FX are what make FM.8 fun to perform with. There are nine effects, played from a row of pads. Hold a pad and the effect **fades in** while you hold it; let go and it fades back out. Press **REC FX** and your move is recorded
 into the pattern, including how far the effect had built up at every step.
 
 ## The pads
 
-| Pad | Effect | Type | Main knob |
+| Pad | What you hear | How it behaves | Main knob |
 |---|---|---|---|
-| **DRIVE** | Warm, tape-style distortion | takeover | DRIVE |
-| **CRUSH** | Lo-fi crunch (bit and sample-rate reduction) | takeover | CRUSH |
-| **PHASE** | A swirling phaser | takeover | RATE (0.4 – 3 Hz) |
-| **DUB** | An echo throw | throw | TIME (`1/16` … `1/8T`) |
-| **SWEEP** | A filter sweep, closing or opening | takeover | SHAPE |
-| **FLANGE** | A jet-plane flanger | takeover | RATE (0.1 – 1.2 Hz) |
-| **REPEAT** | A beat repeat: loops the last slice of the beat | glitch | RATE (`1/4` … `1/32`) |
-| **TAPE** | A tape stop, slow-down or reverse | glitch | SHAPE (`STOP`, `SLOW`, `REVERSE`) |
-| **GATE** | A tempo-synced chop | glitch | RATE (`1/4` … `1/32`) |
+| **DRIVE** | Warm, tape-style distortion | The whole mix goes through it | DRIVE |
+| **CRUSH** | Lo-fi crunch, like an old sampler | The whole mix goes through it | CRUSH |
+| **PHASE** | A swirling, whooshing phaser | The whole mix goes through it | RATE (0.4 – 3 Hz) |
+| **DUB** | An echo thrown off the beat | The mix plays on; some of it is flung into the echo | TIME (`1/16` … `1/8T`) |
+| **SWEEP** | A filter sweep, closing or opening | The whole mix goes through it | SHAPE |
+| **FLANGE** | A jet-plane flanger | The whole mix goes through it | RATE (0.1 – 1.2 Hz) |
+| **REPEAT** | The last slice of the beat loops, like a DJ beat-repeat | The beat is replaced by the loop | RATE (`1/4` … `1/32`) |
+| **TAPE** | The tape slows, stops or runs backwards | The beat is replaced by the tape effect | SHAPE (`STOP`, `SLOW`, `REVERSE`) |
+| **GATE** | The beat is chopped into rhythmic stutters | The beat is replaced by the chopped version | RATE (`1/4` … `1/32`) |
 
-**Takeover** effects take over the mix. While you hold the pad, the normal sound of every track is cut and the whole mix
-plays through the effect, so nothing sneaks past it. A **throw** (DUB) leaves the mix playing and sends a part of each track
-into the effect, so whatever is playing gets flung into an echo. **Glitches** (REPEAT, TAPE, GATE) work on a buffer that has
-been quietly recording the mix all along, so they can grab what played *before* you touched the pad. While one is held it
-replaces the normal mix.
+There are three kinds of pad:
 
-- **REPEAT** captures the last slice of the beat (set by `RATE`) the instant you press, and loops it, even if the track has
-  stopped. With a **RAMP** longer than NOW it becomes a **roll**: it starts up to two divisions slower and steps down to the
-  chosen rate as you hold (1/4, then 1/8, 1/16, 1/32).
+- **Whole-mix effects** (DRIVE, CRUSH, PHASE, SWEEP, FLANGE). While you hold one, you hear the band through the effect and
+  nothing sneaks past it.
+- **The echo throw** (DUB). The groove carries on as normal while a part of every track is flung into the echo, so what's
+  playing at that moment trails off behind it.
+- **Stutter effects** (REPEAT, TAPE, GATE). These listen to the music all the time, so they can grab what played
+  *just before* you touched the pad. While you hold one, it stands in for the normal beat. You can still layer a
+  whole-mix effect on top, even in the recorded lanes (REPEAT into DRIVE, for example).
+
+What each stutter does:
+
+- **REPEAT** loops the last slice of the beat (its length is set by `RATE`) the moment you press, and keeps looping even if
+  the music has stopped. With a **RAMP** longer than NOW it becomes a **roll**: it starts up to two divisions slower and
+  speeds up to the chosen rate as you hold (1/4, then 1/8, 1/16, 1/32).
 - **TAPE** slows the whole mix toward a stop (`STOP`), to half speed (`SLOW`) or backwards (`REVERSE`) as the effect builds.
   A bar-long ramp is a slow tape stop; NOW is a hard one.
-- **GATE** chops the mix with a square wave at the chosen rate. The ramp sets how deep the chop gets.
-- A glitch can be layered with another pad, including in the recorded lanes (REPEAT into DRIVE, for example).
+- **GATE** chops the mix on and off at the chosen rate. The ramp sets how deep the chop gets.
 
 Each pad has **one main knob**, shown in the Punch FX panel for the pad you pressed last. Its setting is saved with the
 pattern. Turn it before you press the pad, or while you hold it.
@@ -47,7 +52,7 @@ SWEEP is the one pad that keeps moving while you hold it, swinging back and fort
 
 ## Fading in
 
-A held effect doesn't jump straight on. It builds from nothing to full over the **RAMP** time:
+A held effect doesn't jump straight on. It builds from nothing to full over the **RAMP** time, which is how long a move takes to reach its full effect:
 
 | Setting | Time to reach full |
 |---|---|
@@ -59,8 +64,6 @@ A held effect doesn't jump straight on. It builds from nothing to full over the 
 These times follow your tempo, so they speed up and slow down with the BPM. Use longer times for builds and NOW for
 quick stabs.
 
-
-
 ## Recording effects
 
 Press **REC FX** (the red dot). While the beat is playing and REC FX is on, whichever pad you hold is recorded into one
@@ -68,7 +71,7 @@ of the pattern's **three FX lanes**. The tabs above the pads switch the sequence
 **LANE 2** and **LANE 3**, each showing only that lane. A tab has an outline when its lane has something recorded.
 
 - Each time you hold a pad, that's one take. It goes into the **first empty lane**, and all the lanes play back **together**,
-  layered on the same effects section. When all three lanes are full, the next take wipes them all and starts again in
+  layered on top of each other. When all three lanes are full, the next take wipes them all and starts again in
   lane 1.
 - Each lane can hold one effect per step. It remembers the pad and **how far the effect had built up**, and plays back the
   whole movement as a smooth fade rather than a simple on and off.
@@ -79,9 +82,9 @@ of the pattern's **three FX lanes**. The tabs above the pads switch the sequence
   wipes all three.
 - The **ON / OFF** button beside ERASE switches the recorded effects on or off without losing them. It shows the current
   state.
-- If two lanes use the same part of the effect (say two SWEEPs), they compete for it and the higher lane wins.
+- If two lanes ask for the same sound at once (say two SWEEPs), the higher lane wins.
 
-Recorded effects line up with the steps: each effect switches on at a step, and its level moves smoothly in between.
+Recorded effects line up with the steps: each effect comes in at a step, and moves smoothly from one step to the next.
 
 ## Tips
 

@@ -12,8 +12,8 @@
 | Chain length | Up to 64 entries |
 | Tempo | 60 – 200 BPM |
 | Swing | 50 – 75% |
-| Notes playing at once | 32, shared across all tracks |
-| Punch FX | 9 (6 processors, 3 glitches) |
+| Notes sounding at once | 32, shared across all tracks |
+| Punch FX | 9 (6 effects, 3 stutters) |
 | Project name | 40 characters |
 
 ## Scales

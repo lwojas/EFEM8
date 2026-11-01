@@ -4,6 +4,8 @@ FM.8 can be controlled from a MIDI controller or your music software (DAW). It s
 motorised faders and displays follow along, and it can **follow an external clock** to stay in time with your other gear.
 You can also play the selected track from a MIDI keyboard.
 
+MIDI knobs and faders each send a numbered message called a **CC** (controller number). The tables below say which number does what, so you can set your controller or DAW to match. If your gear lets you "learn" a control, you can skip the numbers and just move the on-screen control while your hardware listens.
+
 MIDI needs a browser that supports it (Chrome and Edge do). The first time, the browser will ask your permission.
 
 ## Switching it on

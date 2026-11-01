@@ -1,5 +1,9 @@
 # Reference groovebox: reskin and clone guide
 
+> FM.8 was started from this guide and has since diverged (eight FM engines in a palette, `src/engines.ts`, instead of a `TRACKS` lineup with
+> kits and presets; there is no `presets.ts`). The text below describes the reference, Pulse.8, and is kept as the map of what to reuse.
+> For FM.8 itself see `docs/dev/architecture.md` and `docs/dev/extending.md`.
+
 For developers and coding agents starting a **new groovebox product** from this repository.
 
 ## Purpose
