@@ -1,12 +1,13 @@
 // Saves patterns, the chain and the transport settings to IndexedDB (db.ts): an autosave slot
-// plus named saves. Performance state (mutes, solos, FX arming, the screen) is deliberately not
-// saved. Project files (export / import) are separate and unchanged.
+// plus named saves. Performance state (FX arming, the screen) is deliberately not
+// saved; mutes and solos are, with their pattern (SONG mode), and PERFORM mode keeps its own faders. Project files (export / import) are separate and unchanged.
+import { BEAT_DIVISIONS } from "./trackfx";
 import { FILE_EXT, PRODUCT } from "../product";
 import { sanitizeLocks } from "./plock";
 import { ENGINES, DEFAULT_ENGINES } from "../engines";
 import { KNOBS, NUM_TRACKS, setLineup, TRACKS } from "./spec";
 import { newLfos, sanitizeLfos } from "./lfo";
-import { emptyStep, FX_LANES, MAX_CHAIN, MAX_STEPS, newPattern, NUM_PATTERNS, type AppState, type Pattern } from "./state";
+import { emptyStep, FX_LANES, MAX_CHAIN, MAX_STEPS, newPattern, NUM_PATTERNS, type AppState, type MixMode, type Pattern } from "./state";
 import { normalizeArp, type ArpSettings } from "./arp";
 import { normalizeScale, type ProjectScale } from "./scale";
 import { CURRENT_STORE, idbRequest, openDb, SAVES_STORE, txDone } from "./db";
@@ -30,6 +31,9 @@ interface Saved {
   scale?: ProjectScale;
   /** Per-track arpeggiator settings. */
   arp?: ArpSettings[];
+  /** SONG or PERFORM mixing, and the PERFORM faders; absent in older saves (SONG). */
+  mixMode?: MixMode;
+  perfLevels?: number[];
 }
 
 /** A saved lineup, cleaned: one known engine per slot (a missing or unknown entry falls back to the default lineup's). */
@@ -69,6 +73,10 @@ function tidy(p: Pattern): void {
   if (!p || !Array.isArray(p.tracks)) return;
   for (const t of p.tracks) {
     t.lfos = sanitizeLfos(t.lfos);
+    if (t.dly) {
+      t.dly.div = Number.isFinite(t.dly.div) ? Math.max(0, Math.min(BEAT_DIVISIONS.length - 1, Math.round(t.dly.div))) : 1;
+      t.dly.fb = t.dly.fb ? 1 : 0;
+    }
     if (typeof t.last !== "number" || !Number.isFinite(t.last) || t.last < 1 || t.last >= p.length) delete t.last;
     else t.last = Math.floor(t.last);
   }
@@ -93,6 +101,7 @@ function parseProject(s: Saved): (Saved & { patterns: Pattern[]; engines: number
         }
       });
     }
+    const pattern = s.pattern >= 0 && s.pattern < NUM_PATTERNS ? s.pattern : 0;
     return {
       engines,
       projectName: typeof s.projectName === "string" ? s.projectName.slice(0, 40) : "",
@@ -101,9 +110,14 @@ function parseProject(s: Saved): (Saved & { patterns: Pattern[]; engines: number
       chainOn: !!s.chainOn,
       bpm: Number.isFinite(s.bpm) ? s.bpm : 128,
       swing: Number.isFinite(s.swing) ? s.swing : 0.5,
-      pattern: s.pattern >= 0 && s.pattern < NUM_PATTERNS ? s.pattern : 0,
+      pattern,
       scale: normalizeScale(s.scale),
       arp: Array.from({ length: NUM_TRACKS }, (_, i) => normalizeArp(Array.isArray(s.arp) ? s.arp[i] : undefined)),
+      mixMode: s.mixMode === "perform" ? "perform" : "song",
+      perfLevels: Array.from({ length: NUM_TRACKS }, (_, i) => {
+        const v = Array.isArray(s.perfLevels) ? s.perfLevels[i] : undefined;
+        return Number.isFinite(v) ? Math.min(1, Math.max(0, v as number)) : patterns[pattern].tracks[i].level;
+      }),
     };
   });
 }
@@ -152,7 +166,7 @@ function expandPattern(p: Pattern | null): void {
 
 function snapshot(): Saved {
   const s = getState();
-  return { projectName: s.projectName, engines: s.engines, patterns: s.patterns, chain: s.chain, chainOn: s.chainOn, bpm: s.bpm, swing: s.swing, pattern: s.pattern, scale: s.scale, arp: s.arp };
+  return { projectName: s.projectName, engines: s.engines, patterns: s.patterns, chain: s.chain, chainOn: s.chainOn, bpm: s.bpm, swing: s.swing, pattern: s.pattern, scale: s.scale, arp: s.arp, mixMode: s.mixMode, perfLevels: s.perfLevels };
 }
 
 /** Restores the autosave slot into the store. Resolves once done; a missing or damaged slot just
@@ -314,7 +328,7 @@ function importProjectText(text: string, fileName: string): string {
 //  - a snapshot that is not ours or not readable starts fresh instead of wedging startup.
 
 /** The persisted fields, compared by reference: if you add a persisted field, add it here too (and to `snapshot`). */
-const persisted = (s: AppState) => [s.engines, s.patterns, s.chain, s.chainOn, s.bpm, s.swing, s.projectName, s.scale, s.arp];
+const persisted = (s: AppState) => [s.engines, s.patterns, s.chain, s.chainOn, s.bpm, s.swing, s.projectName, s.scale, s.arp, s.mixMode, s.perfLevels];
 const projectChanged = (next: AppState, prev: AppState) => {
   const a = persisted(next);
   const b = persisted(prev);
