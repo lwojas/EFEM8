@@ -7,7 +7,9 @@ import { sanitizeLocks } from "./plock";
 import { ENGINES, DEFAULT_ENGINES } from "../engines";
 import { KNOBS, NUM_TRACKS, setLineup, TRACKS } from "./spec";
 import { newLfos, sanitizeLfos } from "./lfo";
-import { emptyStep, FX_LANES, MAX_CHAIN, MAX_STEPS, newPattern, NUM_PATTERNS, type AppState, type MixMode, type Pattern } from "./state";
+import { breakLoops, sanitizeSidechain } from "./sidechain";
+import { normalizeChain } from "./song";
+import { emptyStep, FX_LANES, MAX_STEPS, newPattern, NUM_PATTERNS, type AppState, type ChainEntry, type MixMode, type Pattern } from "./state";
 import { normalizeArp, type ArpSettings } from "./arp";
 import { normalizeScale, type ProjectScale } from "./scale";
 import { CURRENT_STORE, idbRequest, openDb, SAVES_STORE, txDone } from "./db";
@@ -20,7 +22,8 @@ interface Saved {
   projectName?: string;
   /** `null` stands for an untouched pattern (see `sparse`); older files hold only 16 entries. */
   patterns: Array<Pattern | null>;
-  chain: number[];
+  /** Entries with repeats; saves from before repeats hold one pattern index per pass (`normalizeChain`). */
+  chain: ReadonlyArray<ChainEntry | number>;
   chainOn: boolean;
   bpm: number;
   swing: number;
@@ -71,19 +74,26 @@ function valid(p: unknown): p is Pattern {
 /** A pattern's last steps: whole numbers inside the pattern; anything else (or the full length) is "no last step". */
 function tidy(p: Pattern): void {
   if (!p || !Array.isArray(p.tracks)) return;
-  for (const t of p.tracks) {
+  p.tracks.forEach((t, i) => {
     t.lfos = sanitizeLfos(t.lfos);
+    const sc = sanitizeSidechain(t.sc, i);
+    if (sc) t.sc = sc;
+    else delete t.sc;
     if (t.dly) {
       t.dly.div = Number.isFinite(t.dly.div) ? Math.max(0, Math.min(BEAT_DIVISIONS.length - 1, Math.round(t.dly.div))) : 1;
       t.dly.fb = t.dly.fb ? 1 : 0;
     }
     if (typeof t.last !== "number" || !Number.isFinite(t.last) || t.last < 1 || t.last >= p.length) delete t.last;
     else t.last = Math.floor(t.last);
-  }
+  });
+  breakLoops(p.tracks);
 }
 
 /** Validates and normalises a saved project; null if it is not a usable project. */
-function parseProject(s: Saved): (Saved & { patterns: Pattern[]; engines: number[] }) | null {
+/** A parsed project: `Saved` with the pieces that were cleaned. */
+type Project = Omit<Saved, "chain"> & { chain: ChainEntry[]; patterns: Pattern[]; engines: number[] };
+
+function parseProject(s: Saved): Project | null {
   if (!s || !Array.isArray(s.patterns) || s.patterns.length < 1 || s.patterns.length > NUM_PATTERNS) return null;
   return withLineup(s, (engines) => {
     // Untouched patterns are saved as null.
@@ -106,7 +116,7 @@ function parseProject(s: Saved): (Saved & { patterns: Pattern[]; engines: number
       engines,
       projectName: typeof s.projectName === "string" ? s.projectName.slice(0, 40) : "",
       patterns,
-      chain: Array.isArray(s.chain) ? s.chain.filter((n) => n >= 0 && n < NUM_PATTERNS).slice(0, MAX_CHAIN) : [],
+      chain: normalizeChain(s.chain),
       chainOn: !!s.chainOn,
       bpm: Number.isFinite(s.bpm) ? s.bpm : 128,
       swing: Number.isFinite(s.swing) ? s.swing : 0.5,
@@ -248,7 +258,7 @@ export async function deleteSave(id: string): Promise<void> {
 }
 
 /** Puts a parsed project in the store. The view resets too: the old page or selected step may not exist in it. */
-function replaceProject(project: Saved & { patterns: Pattern[] }, projectName: string): void {
+function replaceProject(project: Project, projectName: string): void {
   setState({ ...project, projectName, cue: null, page: 0, selStep: -1 });
 }
 
@@ -264,7 +274,7 @@ export function loadSaved(entry: SavedProject): boolean {
 function projectText(name: string, compact = false): string {
   const sparsed = sparse(getState().patterns);
   const patterns = compact ? sparsed.map(compactPattern) : sparsed;
-  return JSON.stringify({ app: FILE_APP, version: 1, name, project: { ...snapshot(), patterns } });
+  return JSON.stringify({ app: FILE_APP, version: 2, name, project: { ...snapshot(), patterns } });
 }
 
 /** Whether export / import must go through the host's own dialogs: a plugin's WKWebView has no file input and ignores
@@ -337,9 +347,9 @@ const projectChanged = (next: AppState, prev: AppState) => {
 
 export const HOST_APP = FILE_APP;
 /** Version of a snapshot's `data` (the export file's JSON). Bump when older code could no longer read it. */
-export const HOST_FORMAT = 2;
-/** Formats this code reads: 1 was the export file's JSON as it is; 2 drops each track's trailing blank steps (`compactPattern`). */
-const HOST_FORMATS_READ = [1, 2];
+export const HOST_FORMAT = 3;
+/** Formats this code reads: 1 was the export file's JSON as it is; 2 drops each track's trailing blank steps (`compactPattern`); 3 holds the chain as entries with repeats (older formats are read by `normalizeChain`). */
+const HOST_FORMATS_READ = [1, 2, 3];
 export const HOST_PUBLISH_DEBOUNCE_MS = 300;
 /** An older plugin never answers: give up waiting after this long and run on the default project. */
 export const HOST_ANSWER_TIMEOUT_MS = 2500;
@@ -349,7 +359,7 @@ export function toHostSnapshot(): HostStateSnapshot {
 }
 
 /** The project in a snapshot, or null when it is not ours, not a format we read, or malformed. */
-export function fromHostSnapshot(snap: HostStateSnapshot): (Saved & { patterns: Pattern[] }) | null {
+export function fromHostSnapshot(snap: HostStateSnapshot): Project | null {
   if (snap.app !== HOST_APP || !HOST_FORMATS_READ.includes(snap.format)) return null;
   try {
     const data = JSON.parse(snap.data) as { project?: Saved };

@@ -5,7 +5,7 @@
 ```
 AppState
 ├─ project (persisted)
-│  ├─ projectName, bpm, swing, pattern (current), chain[], chainOn
+│  ├─ projectName, bpm, swing, pattern (current), chain[] ({pattern, repeats, label?}), chainOn
 │  ├─ engines[8]: the engine in each slot (project-wide; an index into `ENGINES`)
 │  ├─ scale: { root, scale, preset }
 │  ├─ mixMode: "song" | "perform"        where faders, mutes and solos live
@@ -22,6 +22,7 @@ AppState
 │       │    ├─ filter: { mode, cut, res }   LP/HP filter, every track
 │       │    ├─ last?: 1-based last step (absent = pattern length); the track loops there, see timing
 │       │    ├─ lfos[3]: { on, target, wave, sync, rate, div, depth }
+│       │    ├─ sc?: { on, src, amt, rel }         sidechain ducking (absent = off); see sidechain.ts
 │       │    ├─ punch: boolean   does this track take part in the Punch FX
 │       │    ├─ dly: { send, mode, time, div, fb? }
 │       │    └─ rev: { send, size }
@@ -31,7 +32,7 @@ AppState
 │       └─ mangler: { sweep, param[] }   sweep-in time and character knob per punch
 └─ performance (not persisted)
    mutes, solos (PERFORM mode's), focus, page, selStep, follow, tab, seqView, write, erase, rec, plock, punch, punchSel,
-   chainEdit, copyArm, audio, playing, playPattern, chainPos, cue, fxPlay, keyHighlight, storageBlocked
+   chainEdit, chainSel, copyArm, audio, playing, playPattern, chainPos, cue, fxPlay, keyHighlight, storageBlocked
 ```
 
 All 64 patterns always exist in memory (`NUM_PATTERNS`). Every pattern holds 64 steps for every track regardless of

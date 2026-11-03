@@ -19,7 +19,7 @@ instrument ─▶ A ─main─▶ B ─main─▶ D ─main─▶ C ─main─�
 
 | Bus | Holds | Sends |
 |---|---|---|
-| **A** | The track filter (a webdsp Filter effect on the bus: resonant LP/HP), then the fader and mute (`BusGain`) | the track's delay send |
+| **A** | The track filter (a webdsp Filter effect on the bus: resonant LP/HP), the sidechain Compressor, then the fader and mute (`BusGain`) | the track's delay send |
 | **B** | | the track's reverb send |
 | **D** | The glitch cut (`BusMainGain`) | the glitch tap, always at 1 for a track that takes part in punch FX |
 | **C** | The takeover cut (`BusMainGain`) | the punch send |
@@ -40,6 +40,23 @@ Consequences, deliberately:
   is cut and the GLITCH bus opens (`mixWrites` `glitch`), so the glitch replaces the dry mix and flows on into the PUNCH
   bus, where another punch (DRIVE, say) can still process it. At most 8 + 8×5 + 2 = 50 of webdsp's 64 buses are used.
 - An unfed bus costs nothing: webdsp sleeps buses with no input, so idle sends are free.
+
+### The sidechain
+
+Every track's bus A ends its effect chain with a webdsp Compressor (`scFx`) whose `CompSidechain` names another track's bus A: the
+detector listens to that bus and the gain reduction is applied to this track. `sidechain.ts` fixes everything but the two knobs the
+modal shows: ratio 12, attack 2 ms, knee 3 dB, AMOUNT as the threshold (−6 dB to −30 dB) and RELEASE (40–500 ms).
+
+- **Off** is ratio 1 and key 0. Ratio 1 is webdsp's exact no-op, and the key must be cleared too, or the compressor would compress the
+  track against itself.
+- **The key** is the source's bus A after its chain, fader and mute (webdsp's tap for sends and meters), so mute and level matter. The
+  source's bus is run before the bus that listens to it, whatever their order.
+- **Loops** are refused by the engine (a key falls back to 0). The page never holds one: `setSidechain` and the source menu refuse
+  them, a saved file's loops are switched off, and `trackFxWrites` sends the writes that switch a sidechain off before those that switch
+  one on.
+- **Needs webdsp with `CompSidechain`**: `Groovebox` adds the compressors only when the engine lists it among the compressor's
+  parameters (`ids.scFx` is undefined otherwise and no sidechain write is made). In a plugin the host must be built from that webdsp.
+- No new buses.
 
 Instruments are created on bus A. Fixed (unexposed) instrument parameters and a per-track gain trim (`gainDb` in the
 spec) are applied at creation. Voice limit: 32.
