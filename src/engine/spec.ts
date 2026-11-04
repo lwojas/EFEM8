@@ -29,7 +29,8 @@ export function setLineup(engines: readonly number[]): void {
   TRACKS.length = 0;
   for (let id = 0; id < NUM_TRACKS; id++) {
     const e = ENGINES[engines[id]] ?? ENGINES[DEFAULT_ENGINES[id]];
-    TRACKS.push({ ...e, id, accent: ACCENT[e.role] });
+    // a choke group only mutes the voices of its own track: the engine's group is a flag, the slot makes it unique
+    TRACKS.push({ ...e, id, accent: ACCENT[e.role], ...(e.chokeGroup !== undefined ? { chokeGroup: id + 1 } : {}) });
   }
 }
 setLineup(DEFAULT_ENGINES);
