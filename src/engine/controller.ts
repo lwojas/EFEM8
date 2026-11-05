@@ -577,7 +577,7 @@ class Controller {
       return;
     }
     while (this.gridTime < gb.now + LOOKAHEAD) this.scheduleStep();
-    this.publishAudible(gb.now);
+    this.publishAudible(gb.heard);
   }
 
   /** While a punch is held its level climbs; push it to the chain every tick until it is full. */

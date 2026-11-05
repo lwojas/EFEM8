@@ -345,7 +345,19 @@ export class Groovebox {
     const audioContext = isTouchDevice() ? new AudioContext({ latencyHint: "playback" }) : new AudioContext({ latencyHint: "interactive" });
     const runtime = await AudioRuntime.create({ audioContext, workletModuleUrl: defaultWorkletUrl, maxVoices: 32 });
     await runtime.resume();
-    return new Groovebox(runtime);
+    const gb = new Groovebox(runtime);
+    gb.context = audioContext;
+    return gb;
+  }
+
+  private context: AudioContext | null = null;
+
+  /** The audio-clock time that is coming out of the speakers right now: `now` minus the output (e.g. Bluetooth) delay,
+   * so the playhead and key lights follow what is heard instead of running ahead of it. */
+  get heard(): number {
+    const ctx = this.context;
+    const delay = ctx ? ctx.outputLatency || ctx.baseLatency || 0 : 0;
+    return this.now - Math.min(delay, 0.5);
   }
 
   get now(): number {
