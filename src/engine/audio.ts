@@ -216,6 +216,10 @@ export function manglerWrites(ids: GraphIds, values: ManglerValues, clamp: (para
   });
 }
 
+/** A phone or tablet (coarse pointer, no hover), where audio usually goes out over Bluetooth. */
+export const isTouchDevice = (): boolean =>
+  typeof matchMedia === "function" && matchMedia("(pointer: coarse) and (hover: none)").matches;
+
 export class Groovebox {
   private readonly queue = new TimedQueue();
   /** Per track: A (fader, delay send), B (reverb send), C (punch send, takeover cut). */
@@ -336,7 +340,10 @@ export class Groovebox {
   };
 
   static async create(): Promise<Groovebox> {
-    const runtime = await AudioRuntime.create({ workletModuleUrl: defaultWorkletUrl, maxVoices: 32 });
+    // Phones/tablets (and so most Bluetooth listening) get the "playback" profile: a larger output buffer that rides out
+    // Bluetooth jitter and busy mobile CPUs instead of crackling. Desktop keeps the lowest-latency default.
+    const audioContext = isTouchDevice() ? new AudioContext({ latencyHint: "playback" }) : new AudioContext({ latencyHint: "interactive" });
+    const runtime = await AudioRuntime.create({ audioContext, workletModuleUrl: defaultWorkletUrl, maxVoices: 32 });
     await runtime.resume();
     return new Groovebox(runtime);
   }

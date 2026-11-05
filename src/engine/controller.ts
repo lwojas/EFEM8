@@ -2,7 +2,7 @@
 // the FX punch-in/write logic. It owns the Groovebox (audio) and keeps the store in sync with what
 // is *audible* (the scheduler runs ~120 ms ahead of the speakers).
 import { hasEmbeddedHost } from "webdsp";
-import { Groovebox, type MixInput } from "./audio";
+import { Groovebox, isTouchDevice, type MixInput } from "./audio";
 import type { AudibleStep, HostPlayback } from "./hostplay";
 import { laneLayers, layeredTarget, sweepLevel, type PunchLayer } from "./mangler";
 import { editPattern, getState, observe, setState } from "./store";
@@ -16,7 +16,8 @@ import { chainAdd, chainPasses, chainPattern, isOnePattern, locateSong } from ".
 import { withSource } from "./source";
 import { startTicker } from "./ticker";
 
-const LOOKAHEAD = 0.12; // seconds of audio scheduled ahead
+// seconds of audio scheduled ahead; phones get more headroom so a late timer tick or Bluetooth hiccup never starves the buffer
+const LOOKAHEAD = isTouchDevice() ? 0.25 : 0.12;
 const TICK_MS = 10;
 
 const heldLayers = (id: number, lvl: number): PunchLayer[] => (id ? [{ id, lvl }] : []);
