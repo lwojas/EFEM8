@@ -107,6 +107,7 @@ class Controller {
       await projectReady;
       this.gb = gb;
       startTicker(() => this.tick(), TICK_MS);
+      requestAnimationFrame(this.frame);
       setState({ audio: "ready" });
       this.syncNow();
       // A plugin that can play the song itself follows the DAW's transport and is handed the song; otherwise (a browser, an older
@@ -577,8 +578,15 @@ class Controller {
       return;
     }
     while (this.gridTime < gb.now + LOOKAHEAD) this.scheduleStep();
-    this.publishAudible(gb.heard);
+    // On screen the playhead moves once per frame (smooth); a hidden page gets no frames, so the timer keeps it, and FX writing, going.
+    if (document.hidden) this.publishAudible(gb.heard);
   }
+
+  private frame = (): void => {
+    requestAnimationFrame(this.frame);
+    const gb = this.gb;
+    if (gb && getState().playing && !this.host?.playing && !document.hidden) this.publishAudible(gb.heard);
+  };
 
   /** While a punch is held its level climbs; push it to the chain every tick until it is full. */
   private sweepHeldPunch(now: number): void {

@@ -352,12 +352,18 @@ export class Groovebox {
 
   private context: AudioContext | null = null;
 
-  /** The audio-clock time that is coming out of the speakers right now: `now` minus the output (e.g. Bluetooth) delay,
-   * so the playhead and key lights follow what is heard instead of running ahead of it. */
+  /** The audio-clock time that is coming out of the speakers right now, so the playhead and key lights follow what is
+   * heard instead of running ahead of it (Bluetooth adds a long output delay). Uses the browser's output timestamp,
+   * which advances smoothly with the screen clock; the plain clock moves in whole buffers. */
   get heard(): number {
     const ctx = this.context;
-    const delay = ctx ? ctx.outputLatency || ctx.baseLatency || 0 : 0;
-    return this.now - Math.min(delay, 0.5);
+    if (!ctx) return this.now;
+    const ts = ctx.getOutputTimestamp?.();
+    if (ts && ts.contextTime && ts.performanceTime) {
+      const heard = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+      if (heard <= this.now && heard > this.now - 0.5) return heard;
+    }
+    return this.now - Math.min(ctx.outputLatency || ctx.baseLatency || 0, 0.5);
   }
 
   get now(): number {
