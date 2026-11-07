@@ -5,6 +5,7 @@
 //
 //   track.<1-8>.volume | mute | solo | delaySend | reverbSend | arp   (arp: takes effect on melodic engines)
 //   track.<1-8>.sound.k<1-5>                                           (the track's five macro knobs, by position)
+//   punch.<key>.macro1 | macro2                                        (the Punch FX macros: drive, crush, phaser, dub, sweep, flanger, repeat, tape, gate)
 //   pattern.select                                                     (0-based pattern slot)
 //
 // Sound knobs and the delay/reverb sends are lockable (plock.ts): in TWEAK mode, with a step selected on the focused track, they read
@@ -15,8 +16,9 @@
 //
 // A parameter's value is in its own domain, `kind` says which:
 //   norm  0..1 continuous      int  min..max whole numbers      bool  0 or 1
-import { setArp, setFilter, setLevel, setLockable, setMute, setPunchSend, setSolo } from "./actions";
+import { setArp, setFilter, setLevel, setLockable, setMute, setPunchMacro, setPunchSend, setSolo } from "./actions";
 import { controller } from "./controller";
+import { macrosOf, PUNCHES } from "./mangler";
 import { effectiveValue, lockParam, lockStep } from "./plock";
 import { currentSource, withSource, type ParamSource } from "./source";
 import { defaultLevel, levelOf, muteOf, NUM_PATTERNS, soloOf, type AppState, type TrackPattern } from "./state";
@@ -79,6 +81,14 @@ function build(): ParamDef[] {
         get: (s) => shown(s, t, `instrument.${key}`), set: (v) => setLockable(t, `instrument.${key}`, v),
       });
     }
+  }
+  for (const punch of PUNCHES) {
+    punch.macros.forEach((macro, i) => {
+      defs.push({
+        id: `punch.${punch.key}.macro${i + 1}`, label: `${punch.label} ${macro.label.toLowerCase()}`, kind: "norm", min: 0, max: 1, def: macro.def,
+        get: (s) => macrosOf(s.patterns[s.pattern].mangler, punch.id)[i], set: (v) => setPunchMacro(punch.id, i as 0 | 1, v),
+      });
+    });
   }
   defs.push({
     id: "pattern.select", label: "Pattern", kind: "int", min: 0, max: NUM_PATTERNS - 1, def: 0,

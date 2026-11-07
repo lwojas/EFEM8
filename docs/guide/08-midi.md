@@ -62,6 +62,19 @@ that's on the track at the moment. Stepped controls (such as the BASS's COLOR) s
 
 Level, sends and knobs change the pattern on screen, exactly as the on-screen controls do.
 
+## Punch FX macros
+
+Both macros of every Punch FX pad are on **channel 9**, the one after the tracks, on **CC 102–119** in pad order: macro 1
+then macro 2 of each.
+
+| Pad | Macro 1 / 2 | Pad | Macro 1 / 2 | Pad | Macro 1 / 2 |
+|---|---|---|---|---|---|
+| DRIVE | 102 / 103 | DUB | 108 / 109 | REPEAT | 114 / 115 |
+| CRUSH | 104 / 105 | SWEEP | 110 / 111 | TAPE | 116 / 117 |
+| PHASE | 106 / 107 | FLANGE | 112 / 113 | GATE | 118 / 119 |
+
+They change the pattern on screen, like the knobs. The LFO settings are not mapped.
+
 ## Choosing patterns
 
 Use **Bank Select (CC 0) and Program Change** on channel 1. Four banks of 16 patterns cover all 64.

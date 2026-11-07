@@ -39,6 +39,31 @@ What each stutter does:
 Each pad has **one main knob**, shown in the Punch FX panel for the pad you pressed last. Its setting is saved with the
 pattern. Turn it before you press the pad, or while you hold it.
 
+## Macros and the LFO
+
+Beside the main knob each pad has **two macros**. Each moves several parts of the effect together along one musical
+dimension. The macros start at 50 %, except DRIVE's BLEND, the MIX of REPEAT and TAPE, and the DEPTH of TAPE and GATE, which start at 100 %. At the start the effect sounds as it always has, so turning a macro is a change from there.
+
+| Pad | Macro 1 | Macro 2 |
+|---|---|---|
+| DRIVE | GRIT: drive, with the output trim following | BLEND: how much driven signal is mixed in |
+| CRUSH | BITS: how few bits | RATE: how far the sample rate drops |
+| PHASE | DEPTH: notch depth and amount | COLOR: feedback and notch centre |
+| DUB | SPACE: send level and how long it repeats | TONE: dark to bright repeats |
+| SWEEP | RANGE: how dark the sweep gets | RESO: the resonant peak |
+| FLANGE | DEPTH: swing and amount | FEEDBACK: the ring, and a longer delay with it |
+| REPEAT | MIX: how much of the loop is in the mix | LENGTH: a shorter or longer loop |
+| TAPE | MIX: how much of the tape is in the mix | DEPTH: how far it winds down |
+| GATE | DEPTH: how far the gate closes | RATE: a faster or slower chop |
+
+The **LFO** button opens one LFO for the pad you pressed last. Point it at **MACRO 1** or **MACRO 2** and it moves that
+macro around where you set it. It works like the track LFOs (wave, SYNC, rate, depth) and starts on a 4-bar cycle. It runs
+on the beat, not on the steps, so a one-bar pattern keeps repeating while the effect slowly changes over 2, 4 or more bars.
+You hear it while the effect is on: while you hold the pad, or while a recorded lane has it playing. Punching works as ever.
+
+The macros are saved with the pattern and can be played from a MIDI controller (see [MIDI](08-midi.md)). Recorded lanes
+that the DAW plugin plays by itself use the macro settings but not the LFO.
+
 ### SWEEP shapes
 
 | Shape | What it does |

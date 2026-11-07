@@ -10,6 +10,7 @@ import { newLfos, sanitizeLfos } from "./lfo";
 import { breakLoops, sanitizeSidechain } from "./sidechain";
 import { normalizeChain } from "./song";
 import { emptyStep, FX_LANES, MAX_STEPS, newPattern, NUM_PATTERNS, type AppState, type ChainEntry, type MixMode, type Pattern } from "./state";
+import { fillMangler } from "./mangler";
 import { normalizeArp, type ArpSettings } from "./arp";
 import { normalizeScale, type ProjectScale } from "./scale";
 import { CURRENT_STORE, idbRequest, openDb, SAVES_STORE, txDone } from "./db";
@@ -87,6 +88,8 @@ function tidy(p: Pattern): void {
     else t.last = Math.floor(t.last);
   });
   breakLoops(p.tracks);
+  // Older saves have no macros or FX LFOs; a punch added since has none of either
+  if (p.mangler) fillMangler(p.mangler);
 }
 
 /** Validates and normalises a saved project; null if it is not a usable project. */

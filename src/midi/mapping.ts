@@ -12,13 +12,19 @@
 //   CC  21  solo                   CC  22  arpeggiator on                does follows the engine in the slot)
 //   CC  74  filter cutoff          CC  71  filter resonance   CC 78  filter mode (64+ = high-pass)
 //
+// Punch FX macros: channel 9 (the one after the tracks), CC 102-119 in catalogue order, macro 1 then macro 2 of each pad
+// (DRIVE 102/103, CRUSH 104/105 ... GATE 118/119). 102-119 are undefined in the MIDI spec.
+//
 // There is no pan: the app has none. CC 10 is left free for it.
+import { PUNCHES } from "../engine/mangler";
 import { KNOBS, NUM_TRACKS } from "../engine/spec";
 import type { MidiMapping } from "./control";
 
 /** Sound knob CCs by position on the track (Sound Controller 1-5): knob k of whatever engine is in the slot. */
 /** (71 and 74 are the General MIDI resonance and cutoff: the track filter has them.) */
 const SOUND_CCS = [70, 72, 73, 75, 76].slice(0, KNOBS);
+/** First CC of the Punch FX macros. */
+const PUNCH_CC = 102;
 
 function build(): MidiMapping["parameters"] {
   const parameters: MidiMapping["parameters"] = {};
@@ -36,6 +42,11 @@ function build(): MidiMapping["parameters"] {
     parameters[id("filterMode")] = { cc: 78, channel };
     SOUND_CCS.forEach((cc, i) => { parameters[id(`sound.k${i + 1}`)] = { cc, channel }; });
   }
+  // the Punch FX macros live on their own channel, after the tracks
+  PUNCHES.forEach((punch, i) => {
+    parameters[`punch.${punch.key}.macro1`] = { cc: PUNCH_CC + i * 2, channel: NUM_TRACKS + 1 };
+    parameters[`punch.${punch.key}.macro2`] = { cc: PUNCH_CC + i * 2 + 1, channel: NUM_TRACKS + 1 };
+  });
   return parameters;
 }
 

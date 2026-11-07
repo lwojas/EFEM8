@@ -9,6 +9,7 @@
 // Each punch has one character parameter and a sweep level 0..1: the level rises while the pad is
 // held, so the effect is performed in, not switched on.
 import { DubDelayDivision, GlitchMode, NodeParam } from "webdsp";
+import { lfoOffset, newLfo, sanitizeLfo, LFO_DIVISION_NAMES, type Lfo } from "./lfo";
 import type { ManglerBase, Pattern } from "./state";
 
 export type ManglerKey =
@@ -78,6 +79,12 @@ export const DEFAULT_SWEEP = 2;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const expLerp = (a: number, b: number, t: number) => a * Math.pow(b / a, t);
 const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
+const clamp = (n: number, lo: number, hi: number) => (n < lo ? lo : n > hi ? hi : n);
+/** A macro's travel around the setting `mid` that the effect has always had: `mid` exactly at 0.5, `lo` at 0 and `hi` at 1. */
+const span = (m: number, lo: number, mid: number, hi: number) => (m >= 0.5 ? mid + (hi - mid) * (m - 0.5) * 2 : mid - (mid - lo) * (0.5 - m) * 2);
+/** A factor of up to 2^`oct` either way, 1 exactly at 0.5. */
+const oct = (m: number, o: number) => 2 ** ((m - 0.5) * 2 * o);
+
 
 /** The resting state: transparent chain, dub echo return open, glitch idle (mix 0). */
 export function baseValues(): ManglerValues {
@@ -107,8 +114,19 @@ export interface PunchParam {
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 const SWEEP_SHAPES = ["CLOSE", "CLOSE RES", "OPEN", "OPEN RES"] as const;
 
+/** One of a punch's two macros: a musical dimension of the effect, normalised 0..1. */
+export interface MacroDef {
+  label: string;
+  /** The resting setting; for most, 0.5 is how the effect sounded before macros existed. */
+  def: number;
+}
+/** The two macro values of a punch. */
+export type Macros = readonly [number, number];
+
 export interface PunchDef {
   id: number;
+  /** Stable name for outside control (`punch.<key>.macro1`). Never change one once shipped. */
+  key: string;
   label: string;
   hint: string;
   /** Cut every track's dry output and send it all through the mangler. */
@@ -119,9 +137,16 @@ export interface PunchDef {
   boost: number;
   /** The one character parameter: FX → amount (sweep) → character. */
   param: PunchParam;
-  /** Overrides on top of the resting values. `p` is the character parameter, `lvl` the 0..1 sweep level. */
-  values(p: number, lvl: number): Partial<ManglerValues>;
+  /** The two macros: each moves several of the effect's parameters together (see `values`). */
+  macros: readonly [MacroDef, MacroDef];
+  /** Overrides on top of the resting values. `p` is the character parameter, `lvl` the 0..1 sweep level, `m` the macros (their
+   * defaults when left out). At the default macros it is the effect as it always sounded. */
+  values(p: number, lvl: number, m?: Macros): Partial<ManglerValues>;
+  /** Scale of a throw's send level with the macros (1 at the defaults). */
+  boostScale?(m: Macros): number;
 }
+
+type RawPunch = Omit<PunchDef, "values"> & { values(p: number, lvl: number, m: Macros): Partial<ManglerValues> };
 
 /** Lengths the glitch punches offer, as `GlitchDivision` indices (0 is 1/2, 1 is 1/4 ... 5 is 1/64). */
 export const GLITCH_DIVISIONS = [
@@ -136,88 +161,179 @@ const TAPE_SHAPES = ["STOP", "SLOW", "REVERSE"] as const;
 /** Where the tape speed ends up at full sweep, per shape. */
 const TAPE_SPEEDS = [0, 0.5, -1] as const;
 
-export const PUNCHES: readonly PunchDef[] = [
+const mac = (label: string, def = 0.5): MacroDef => ({ label, def });
+
+// Every mapping below is anchored on the effect as it was before macros: at the default macros `values` returns the same numbers.
+const RAW: readonly RawPunch[] = [
   {
-    id: 1, label: "DRIVE", hint: "TAPE SATURATION", takeover: true, boost: 1,
+    id: 1, key: "drive", label: "DRIVE", hint: "TAPE SATURATION", takeover: true, boost: 1,
     param: { label: "DRIVE", def: 0.6, format: pct },
-    values: (p, l) => ({ sDrive: lerp(10, 30, p), sOut: -lerp(3, 9, p) * l, sMix: l, ...OWN }),
+    // GRIT: pre-gain, with the output trim following it.  BLEND: how much of the driven signal is mixed in.
+    macros: [mac("GRIT"), mac("BLEND", 1)],
+    values: (p, l, [m1, m2]) => {
+      const drive = span(m1, 4, lerp(10, 30, p), 30);
+      return { sDrive: drive, sOut: -(lerp(3, 9, p) + (drive - lerp(10, 30, p)) * 0.3) * l, sMix: l * lerp(0.15, 1, m2), ...OWN };
+    },
   },
   {
-    id: 2, label: "CRUSH", hint: "BIT + RATE REDUCTION", takeover: true, boost: 1,
+    id: 2, key: "crush", label: "CRUSH", hint: "BIT + RATE REDUCTION", takeover: true, boost: 1,
     param: { label: "CRUSH", def: 0.6, format: pct },
-    values: (p, l) => ({
-      cBits: Math.round(lerp(16, lerp(9, 4, p), l)), cDown: Math.round(lerp(1, lerp(2, 10, p), l)), cMix: 1, ...OWN,
+    // BITS: how few bits it is cut down to.  RATE: how far the sample rate drops.
+    macros: [mac("BITS"), mac("RATE")],
+    values: (p, l, [m1, m2]) => ({
+      cBits: Math.round(lerp(16, clamp(lerp(9, 4, p) - (m1 - 0.5) * 6, 2, 14), l)),
+      cDown: Math.round(lerp(1, clamp(lerp(2, 10, p) * oct(m2, 1), 1, 16), l)), cMix: 1, ...OWN,
     }),
   },
   {
-    id: 3, label: "PHASE", hint: "SWEEPING PHASER", takeover: true, boost: 1,
+    id: 3, key: "phaser", label: "PHASE", hint: "SWEEPING PHASER", takeover: true, boost: 1,
     param: { label: "RATE", def: 0.6, format: (n) => `${lerp(0.4, 3, n).toFixed(1)} Hz` },
-    values: (p, l) => ({ pMix: 0.85 * l, pRate: lerp(0.4, 3, p), pDepth: 0.95, pFb: lerp(0.4, 0.8, p), ...OWN }),
+    // DEPTH: how deep the notches and how much of the phased signal there is.  COLOR: feedback and where the notches centre.
+    macros: [mac("DEPTH"), mac("COLOR")],
+    values: (p, l, [m1, m2]) => ({
+      pMix: span(m1, 0.2, 0.85, 1) * l, pRate: lerp(0.4, 3, p), pDepth: span(m1, 0.4, 0.95, 0.99),
+      pFb: clamp(lerp(0.4, 0.8, p) + (m2 - 0.5) * 0.4, 0, 0.85), pCenter: 900 * oct(m2, 1), ...OWN,
+    }),
   },
   {
-    id: 4, label: "DUB", hint: "ECHO THROW", takeover: false, boost: 0.85,
+    id: 4, key: "dub", label: "DUB", hint: "ECHO THROW", takeover: false, boost: 0.85,
     param: {
       label: "TIME", steps: DUB_DIVISIONS.map((d) => d.label), def: 0.5,
       format: (n) => DUB_DIVISIONS[Math.round(n * (DUB_DIVISIONS.length - 1))].label,
     },
-    values: (p, l) => ({
-      dDiv: DUB_DIVISIONS[Math.round(p * (DUB_DIVISIONS.length - 1))].value, dFb: lerp(0.55, 0.9, l), dMix: 1,
+    // SPACE: how much goes into the echo and how long it keeps repeating.  TONE: how dark or bright the repeats are.
+    macros: [mac("SPACE"), mac("TONE")],
+    values: (p, l, [m1, m2]) => ({
+      dDiv: DUB_DIVISIONS[Math.round(p * (DUB_DIVISIONS.length - 1))].value, dFb: lerp(0.55, span(m1, 0.4, 0.9, 0.95), l),
+      dTone: 3500 * oct(m2, 1.5), dMix: 1,
     }),
+    boostScale: ([m1]) => span(m1, 0.4, 1, 1.15),
   },
   {
-    id: 5, label: "SWEEP", hint: "FILTER SWEEP", takeover: true, boost: 1,
+    id: 5, key: "sweep", label: "SWEEP", hint: "FILTER SWEEP", takeover: true, boost: 1,
     param: {
       label: "SHAPE", steps: SWEEP_SHAPES, def: 0,
       format: (n) => SWEEP_SHAPES[Math.round(n * (SWEEP_SHAPES.length - 1))],
     },
     // CLOSE: open → closed.  OPEN: closed → open.  RES adds a resonant peak that rides the sweep.
-    values: (p, l) => {
+    // RANGE: how dark the sweep gets (2 octaves either way).  RESO: the resonant peak.
+    macros: [mac("RANGE"), mac("RESO")],
+    values: (p, l, [m1, m2]) => {
       const shape = Math.round(p * (SWEEP_SHAPES.length - 1));
-      const cut = shape >= 2 ? expLerp(120, 20000, l) : expLerp(20000, 140, l);
-      return { fCut: cut, fRes: shape % 2 === 1 ? 3.4 : 1.3, ...OWN };
+      const dark = (shape >= 2 ? 120 : 140) / oct(m1, 2);
+      const cut = shape >= 2 ? expLerp(dark, 20000, l) : expLerp(20000, dark, l);
+      return { fCut: cut, fRes: span(m2, 0.8, shape % 2 === 1 ? 3.4 : 1.3, 4.2), ...OWN };
     },
   },
   {
-    id: 6, label: "FLANGE", hint: "JET FLANGER", takeover: true, boost: 1,
+    id: 6, key: "flanger", label: "FLANGE", hint: "JET FLANGER", takeover: true, boost: 1,
     param: { label: "RATE", def: 0.4, format: (n) => `${lerp(0.1, 1.2, n).toFixed(1)} Hz` },
-    values: (p, l) => ({ xMix: 0.8 * l, xRate: lerp(0.1, 1.2, p), xDepth: 3, xDelay: 2.5, xFb: 0.75, ...OWN }),
+    // DEPTH: how far the delay swings and how much of the flanged signal there is.  FEEDBACK: the metallic ring, and a longer delay with it.
+    macros: [mac("DEPTH"), mac("FEEDBACK")],
+    values: (p, l, [m1, m2]) => ({
+      xMix: span(m1, 0.25, 0.8, 0.95) * l, xRate: lerp(0.1, 1.2, p), xDepth: span(m1, 1.5, 3, 4), xDelay: 2.5 * oct(m2, 0.75),
+      xFb: span(m2, 0.35, 0.75, 0.88), ...OWN,
+    }),
   },
   {
     // Captures the last beat-fraction the moment the pad goes down and loops it. The sweep makes it a roll: the loop starts up to two
     // divisions longer than the one chosen and steps down to it as the level rises (1/4 → 1/8 → 1/16 → 1/32), always the newest slice.
-    id: 7, label: "REPEAT", hint: "BEAT REPEAT ROLL", takeover: false, glitch: true, boost: 0,
+    // MIX: how much of the loop is in the mix.  LENGTH: shifts the loop shorter (up) or longer (down) by up to two divisions.
+    id: 7, key: "repeat", label: "REPEAT", hint: "BEAT REPEAT ROLL", takeover: false, glitch: true, boost: 0,
     param: { label: "RATE", steps: GLITCH_DIVISIONS.map((d) => d.label), def: 2 / 3, format: divLabel },
-    values: (p, l) => {
+    macros: [mac("MIX", 1), mac("LENGTH")],
+    values: (p, l, [m1, m2]) => {
       const end = divIndex(p);
       const start = Math.max(0, end - 2);
-      return { gMix: 1, gMode: GlitchMode.Repeat, gDiv: GLITCH_DIVISIONS[Math.round(lerp(start, end, l))].value, gSpeed: 1, ...OWN };
+      const div = GLITCH_DIVISIONS[Math.round(lerp(start, end, l))].value + Math.round((m2 - 0.5) * 4);
+      return { gMix: lerp(0.2, 1, m1), gMode: GlitchMode.Repeat, gDiv: clamp(div, 0, 5), gSpeed: 1, ...OWN };
     },
   },
   {
     // The mix slows toward a stop (or half speed, or backwards) as the level rises: a sweep of a bar is a slow tape-stop, NOW is a hard one.
-    id: 8, label: "TAPE", hint: "TAPE STOP / SLOW / REVERSE", takeover: false, glitch: true, boost: 0,
+    // MIX: how much of the tape is in the mix.  DEPTH: how far it winds down.
+    id: 8, key: "tape", label: "TAPE", hint: "TAPE STOP / SLOW / REVERSE", takeover: false, glitch: true, boost: 0,
     param: {
       label: "SHAPE", steps: TAPE_SHAPES, def: 0,
       format: (n) => TAPE_SHAPES[Math.round(n * (TAPE_SHAPES.length - 1))],
     },
-    values: (p, l) => {
+    macros: [mac("MIX", 1), mac("DEPTH", 1)],
+    values: (p, l, [m1, m2]) => {
       const to = TAPE_SPEEDS[Math.round(p * (TAPE_SHAPES.length - 1))];
-      return { gMix: 1, gMode: GlitchMode.Tape, gSpeed: lerp(1, to, l), ...OWN };
+      return { gMix: lerp(0.2, 1, m1), gMode: GlitchMode.Tape, gSpeed: lerp(1, to, l * lerp(0.3, 1, m2)), ...OWN };
     },
   },
   {
     // A square chop at the chosen length; the depth is the sweep level, so a held pad closes the gate more and more.
-    id: 9, label: "GATE", hint: "TEMPO-SYNCED CHOP", takeover: false, glitch: true, boost: 0,
+    // DEPTH: how far the gate closes.  RATE: shifts the chop faster (up) or slower (down) by up to two divisions.
+    id: 9, key: "gate", label: "GATE", hint: "TEMPO-SYNCED CHOP", takeover: false, glitch: true, boost: 0,
     param: { label: "RATE", steps: GLITCH_DIVISIONS.map((d) => d.label), def: 2 / 3, format: divLabel },
-    values: (p, l) => ({ gMix: l, gMode: GlitchMode.Gate, gDiv: GLITCH_DIVISIONS[divIndex(p)].value, gSpeed: 1, ...OWN }),
+    macros: [mac("DEPTH", 1), mac("RATE")],
+    values: (p, l, [m1, m2]) => ({
+      gMix: l * lerp(0.2, 1, m1), gMode: GlitchMode.Gate, gDiv: clamp(GLITCH_DIVISIONS[divIndex(p)].value + Math.round((m2 - 0.5) * 4), 0, 5), gSpeed: 1, ...OWN,
+    }),
   },
 ];
 
+const defaultMacros = (p: { macros: readonly [MacroDef, MacroDef] }): Macros => [p.macros[0].def, p.macros[1].def];
+
+export const PUNCHES: readonly PunchDef[] = RAW.map((p) => ({ ...p, values: (v, l, m) => p.values(v, l, m ?? defaultMacros(p)) }));
+
 export const punchById = (id: number): PunchDef | undefined => PUNCHES.find((p) => p.id === id);
+
+/** What an FX LFO can move. */
+export const FX_LFO_TARGETS = [
+  { id: "macro1", label: "MACRO 1" },
+  { id: "macro2", label: "MACRO 2" },
+] as const;
+
+/** A fresh FX LFO: off, locked to the beat at 4 bars, so a slow evolution is one switch away. */
+export const newFxLfo = (): Lfo => ({ ...newLfo(), sync: true, div: Math.max(0, LFO_DIVISION_NAMES.indexOf("4 bars")), depth: 0.6 });
 
 /** The defaults for a new pattern's punch settings. */
 export function defaultMangler(): ManglerBase {
-  return { sweep: DEFAULT_SWEEP, param: [0, ...PUNCHES.map((p) => p.param.def)] };
+  return {
+    sweep: DEFAULT_SWEEP,
+    param: [0, ...PUNCHES.map((p) => p.param.def)],
+    macro: [[0.5, 0.5], ...PUNCHES.map((p) => [...defaultMacros(p)] as [number, number])],
+    lfo: [newFxLfo(), ...PUNCHES.map(newFxLfo)],
+  };
+}
+
+/** Fill in what an older save lacks (macros and FX LFOs, and any punch added since) and clean what it has. Mutates `m`. */
+export function fillMangler(m: ManglerBase): void {
+  const raw = m as Partial<ManglerBase>;
+  const macro = Array.isArray(raw.macro) ? raw.macro : [];
+  const lfo = Array.isArray(raw.lfo) ? raw.lfo : [];
+  const ok = (v: unknown, def: number) => (typeof v === "number" && Number.isFinite(v) ? clamp01(v) : def);
+  m.macro = [[0.5, 0.5], ...PUNCHES.map((p, i) => {
+    const d = defaultMacros(p);
+    const saved = Array.isArray(macro[i + 1]) ? macro[i + 1] : [];
+    return [ok(saved[0], d[0]), ok(saved[1], d[1])] as [number, number];
+  })];
+  m.lfo = [newFxLfo(), ...PUNCHES.map((_, i) => {
+    const l = sanitizeLfo(lfo[i + 1], newFxLfo());
+    if (!FX_LFO_TARGETS.some((t) => t.id === l.target)) return { ...l, on: false, target: "" };
+    return l;
+  })];
+}
+
+/** A punch's macros as set (before any LFO). */
+export const macrosOf = (base: ManglerBase, id: number): Macros => base.macro?.[id] ?? (punchById(id) ? defaultMacros(punchById(id)!) : [0.5, 0.5]);
+
+/** Whether a punch's LFO is moving one of its macros. */
+export const fxLfoActive = (base: ManglerBase, id: number): boolean => {
+  const l = base.lfo?.[id];
+  return !!l && l.on && FX_LFO_TARGETS.some((t) => t.id === l.target);
+};
+
+/** A punch's macros at audio time `time`: as set, with its LFO added to the one it points at. The LFO runs on the beat grid
+ * (`anchorTime`, `bpm`) and not on the sequencer's step, so it keeps its own cycle however long the pattern is. */
+export function macrosAt(base: ManglerBase, id: number, time: number, anchorTime: number, bpm: number): Macros {
+  const m = macrosOf(base, id);
+  if (!fxLfoActive(base, id)) return m;
+  const off = lfoOffset(base.lfo[id], time, anchorTime, bpm);
+  return base.lfo[id].target === "macro1" ? [clamp01(m[0] + off), m[1]] : [m[0], clamp01(m[1] + off)];
 }
 
 export interface ManglerTarget {
@@ -229,17 +345,19 @@ export interface ManglerTarget {
   glitch: boolean;
 }
 
-/** Everything the mangler should look like for a punch (0 = none) at sweep level `lvl`. */
-export function manglerTarget(base: ManglerBase, punchId: number, lvl = 1): ManglerTarget {
+/** Everything the mangler should look like for a punch (0 = none) at sweep level `lvl`. `macros` replaces the pattern's own
+ * (what an LFO-moved punch passes). */
+export function manglerTarget(base: ManglerBase, punchId: number, lvl = 1, macros?: Macros): ManglerTarget {
   const resting = baseValues();
   const punch = punchById(punchId);
   if (!punch) return { values: resting, takeover: false, boost: 0, glitch: false };
   const l = clamp01(lvl);
   const p = clamp01(base.param[punchId] ?? punch.param.def);
+  const m = macros ?? macrosOf(base, punchId);
   return {
-    values: { ...resting, ...punch.values(p, l) },
+    values: { ...resting, ...punch.values(p, l, m) },
     takeover: punch.takeover,
-    boost: punch.takeover ? 1 : punch.boost * l,
+    boost: punch.takeover ? 1 : punch.boost * l * (punch.boostScale?.(m) ?? 1),
     glitch: !!punch.glitch,
   };
 }
@@ -248,6 +366,8 @@ export function manglerTarget(base: ManglerBase, punchId: number, lvl = 1): Mang
 export interface PunchLayer {
   id: number;
   lvl: number;
+  /** Macros to use instead of the pattern's (an LFO-moved punch). */
+  macros?: Macros;
 }
 
 /** Several punches at once (the FX lanes play layered). Each layer's overrides on the resting chain are
@@ -260,8 +380,8 @@ export function layeredTarget(base: ManglerBase, layers: readonly PunchLayer[]):
   let takeover = false;
   let glitch = false;
   let boost = 0;
-  for (const { id, lvl } of layers) {
-    const t = manglerTarget(base, id, lvl);
+  for (const { id, lvl, macros } of layers) {
+    const t = manglerTarget(base, id, lvl, macros);
     for (const k of Object.keys(resting) as ManglerKey[]) if (t.values[k] !== resting[k]) values[k] = t.values[k];
     takeover ||= t.takeover;
     glitch ||= t.glitch;

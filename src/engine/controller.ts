@@ -4,7 +4,7 @@
 import { hasEmbeddedHost } from "webdsp";
 import { Groovebox, isTouchDevice, type MixInput } from "./audio";
 import type { AudibleStep, HostPlayback } from "./hostplay";
-import { laneLayers, layeredTarget, sweepLevel, type PunchLayer } from "./mangler";
+import { fxLfoActive, laneLayers, layeredTarget, macrosAt, sweepLevel, type PunchLayer } from "./mangler";
 import { editPattern, getState, observe, setState } from "./store";
 import { TRACKS } from "./spec";
 import { muteOf, pickWriteLane, soloOf, trackStepAt, type Pattern } from "./state";
@@ -526,13 +526,22 @@ class Controller {
     };
   }
 
+  /** The layers with each LFO-moved punch's macros as they are at audio time `time`. */
+  private modulate(layers: readonly PunchLayer[], pat: Pattern, time: number): PunchLayer[] {
+    const gb = this.gb;
+    if (!gb) return [...layers];
+    const { anchorTime, bpm } = gb.beatGrid;
+    return layers.map((l) => (fxLfoActive(pat.mangler, l.id) ? { ...l, macros: macrosAt(pat.mangler, l.id, time, anchorTime, bpm) } : l));
+  }
+
   /** Put the punch bus in the state for these punches (none = resting). */
   private applyLayers(layers: PunchLayer[], time?: number): void {
     const gb = this.gb;
     if (!gb) return;
     gb.when(time, () => {
       this.layersApplied = layers;
-      const target = layeredTarget(this.soundPattern().mangler, layers);
+      const pat = this.soundPattern();
+      const target = layeredTarget(pat.mangler, this.modulate(layers, pat, gb.now));
       gb.applyManglerValues(target.values);
       gb.applyMix(this.mixInput(target.takeover, target.boost, target.glitch));
     });
@@ -546,10 +555,11 @@ class Controller {
     const next = this.fxOn() ? laneLayers(pat, (step + 1) % pat.length) : [];
     // A lane keeps ramping into the next step while it holds the same punch there.
     const ahead = layers.map((l) => ({ id: l.id, lvl: next.find((n) => n.id === l.id)?.lvl ?? l.lvl }));
-    const hasRamp = ahead.some((l, i) => l.lvl !== layers[i].lvl);
-    const a = layeredTarget(pat.mangler, layers);
-    const b = hasRamp ? layeredTarget(pat.mangler, ahead) : a;
-    gb.scheduleManglerSegment(a.values, b.values, t, hasRamp ? stepDur : 0);
+    // An LFO on a macro moves the chain across the step too: the value at its start ramps to the value at the next one
+    const ramps = ahead.some((l, i) => l.lvl !== layers[i].lvl) || layers.some((l) => fxLfoActive(pat.mangler, l.id));
+    const a = layeredTarget(pat.mangler, this.modulate(layers, pat, t));
+    const b = ramps ? layeredTarget(pat.mangler, this.modulate(ahead, pat, t + stepDur)) : a;
+    gb.scheduleManglerSegment(a.values, b.values, t, ramps ? stepDur : 0);
     gb.when(t, () => {
       this.layersApplied = layers;
       gb.applyMix(this.mixInput(a.takeover, a.boost, a.glitch));
@@ -594,7 +604,8 @@ class Controller {
     if (st.punch !== 0) {
       const lvl = this.heldLevel(now);
       const [on] = this.layersApplied;
-      if (this.layersApplied.length !== 1 || on.lvl !== lvl || on.id !== st.punch) this.applyLayers(heldLayers(st.punch, lvl));
+      // a held punch whose LFO is running changes with the clock, not only with its level
+      if (this.layersApplied.length !== 1 || on.lvl !== lvl || on.id !== st.punch || fxLfoActive(this.soundPattern().mangler, st.punch)) this.applyLayers(heldLayers(st.punch, lvl));
     }
   }
 
