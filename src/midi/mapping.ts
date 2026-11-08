@@ -20,11 +20,11 @@ import { PUNCHES } from "../engine/mangler";
 import { KNOBS, NUM_TRACKS } from "../engine/spec";
 import type { MidiMapping } from "./control";
 
+/** First CC of the Punch FX macros. */
+const PUNCH_CC = 102;
 /** Sound knob CCs by position on the track (Sound Controller 1-5): knob k of whatever engine is in the slot. */
 /** (71 and 74 are the General MIDI resonance and cutoff: the track filter has them.) */
 const SOUND_CCS = [70, 72, 73, 75, 76].slice(0, KNOBS);
-/** First CC of the Punch FX macros. */
-const PUNCH_CC = 102;
 
 function build(): MidiMapping["parameters"] {
   const parameters: MidiMapping["parameters"] = {};
